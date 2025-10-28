@@ -1,7 +1,7 @@
 const WebSocket = require("ws");
 import pool from "../config/sql.js";
 import authMiddleware from "../middleware/auth.js";
-import Game from "../models/game.js"
+import Game from "../models/game.js";
 
 // create websocket server, attach later in app.js
 const wss = new WebSocket.Server({noServer: true});
@@ -15,7 +15,7 @@ wss.on("connection", async (ws, req) => {
     const game_id = params.get("game_id");
     const token = req.headers["sec-websocket-protocol"];
 
-    // decode token to authenticate user
+    // decode token to authenticate user, redundant, could comment out, already handled in wssController
     const decoded = authMiddleware(token);
     if (!decoded) {
         ws.close(4001, "Invalid token!")
