@@ -9,7 +9,7 @@ app.use(express.json());
 
 // Define a route for the home page
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "../frontend/index.html")); // Serve the HTML file
+  res.sendFile(path.join(__dirname, "../index.html")); // Serve the HTML file
 });
 
 

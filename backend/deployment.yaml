@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: task-manager-deployment
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: task-manager
+  template:
+    metadata:
+      labels:
+        app: task-manager
+    spec:
+      containers:
+        - name: task-manager
+          image: task-manager-k8s
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 3000
+          env:
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: api-secret
+                  key: API_KEY
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
