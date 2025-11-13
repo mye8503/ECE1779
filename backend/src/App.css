@@ -37,6 +37,12 @@
   padding: 2em;
 }
 
+.stock-price {
+  padding: 2em;
+  border: 1px solid;
+  border-color:antiquewhite;
+}
+
 .read-the-docs {
   color: #888;
 }

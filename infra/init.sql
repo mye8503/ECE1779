@@ -44,5 +44,6 @@ CREATE TABLE IF NOT EXISTS users (
     username ARRAY,
     email ARRAY,
     balance REAL,
-    game_stats JSONB
+    game_stats JSONB,
+    password_hash TEXT NOT NULL
 );
