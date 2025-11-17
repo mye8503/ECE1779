@@ -50,5 +50,14 @@ services:
       - ./backend/src:/app/src
     command: npm start
 
+  # Frontend service
+  frontend:
+    build: ./frontend
+    ports:
+      - "5174:5173"
+    volumes:
+      - ./frontend/src:/app/src
+    command: npm run dev
+
 volumes:
   postgres_data:
