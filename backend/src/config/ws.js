@@ -1,4 +1,4 @@
-const WebSocket = require("ws");
+import WebSocket from "ws";
 import pool from "../config/sql.js";
 import authMiddleware from "../middleware/auth.js";
 import Game from "../models/game.js";

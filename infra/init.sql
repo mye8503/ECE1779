@@ -1,8 +1,8 @@
 -- creating stocks table
 CREATE TABLE IF NOT EXISTS stocks (
     stock_id SERIAL PRIMARY KEY,
-    ticker ARRAY NOT NULL,
-    company_name ARRAY NOT NULL,
+    ticker VARCHAR(10) NOT NULL,
+    company_name VARCHAR(255) NOT NULL,
     stock_timestamp TIME NOT NULL,
     stock_value REAL NOT NULL
 );
@@ -17,17 +17,17 @@ CREATE TABLE IF NOT EXISTS games (
     start_time TIMESTAMP NOT NULL,
     cur_time TIMESTAMP NOT NULL,
     players_data JSONB NOT NULL,
-    winner ARRAY
+    winner INTEGER
 );
 
 -- creating gamestockprices table
 CREATE TABLE IF NOT EXISTS gamestockprices (
     id SERIAL PRIMARY KEY,
-    game_id INTEGER NOT NULL
+    game_id INTEGER NOT NULL,
     stock_id INTEGER NOT NULL,
     cur_price REAL NOT NULL,
     cur_volley REAL NOT NULL,
-    hist_price REAL NOT NULL,
+    hist_price REAL NOT NULL
 );
 
 -- creating transactions table
@@ -41,8 +41,8 @@ CREATE TABLE IF NOT EXISTS transactions (
 -- create users table
 CREATE TABLE IF NOT EXISTS users (
     user_id SERIAL PRIMARY KEY,
-    username ARRAY,
-    email ARRAY,
+    username VARCHAR(50),
+    email VARCHAR(255),
     balance REAL,
     game_stats JSONB,
     password_hash TEXT NOT NULL

@@ -1,6 +1,7 @@
 {
   "name": "stock-game-k8s",
   "version": "1.0.0",
+  "type": "module",
   "main": "src/app.js",
   "scripts": {
     "start": "node src/app.js",
@@ -11,6 +12,10 @@
   },
   "dependencies": {
     "express": "^5.1.0",
+    "pg": "^8.11.3",
+    "ws": "^8.14.2",
+    "jsonwebtoken": "^9.0.2",
+    "bcryptjs": "^2.4.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

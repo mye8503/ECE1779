@@ -1,4 +1,5 @@
-const { Pool } = require("pg");
+import pkg from "pg";
+const { Pool } = pkg;
 // PostgreSQL connection
 const pool = new Pool({
   host: process.env.DB_HOST,
