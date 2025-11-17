@@ -56,6 +56,11 @@ class Game {
         // TO-DO:
         // handle the action message
     }
+
+    stop() {
+        // TO-DO
+        // clear the game
+    }
 }
 
 export default Game;
