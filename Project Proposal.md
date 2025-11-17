@@ -39,16 +39,61 @@ We will use Kubernetes for clustering and orchestration, enabling automatic load
 - Python scripts will be used for auxiliary tasks, such as fetching external stock data via APIs.
 
 #### Database and Persistent Storage
-- PostgreSQL will serve as the relational database for user accounts, games, transactions, and leaderboards.  
-- DigitalOcean Volumes will be attached to the PostgreSQL container to persist data across container restarts and redeployments.
+**PostgreSQL Database:**
+PostgreSQL will serve as our relational database, storing all persistent application data including user accounts, game sessions, stock transactions, and leaderboard rankings.
 
-**Planned tables:**
-- `Users` – login credentials, balance, games played, etc.  
-- `Games` – metadata, game state, and session tracking.  
-- `Stocks` – ticker symbols, company names, and reference data.  
-- `Transactions` – records of user buy/sell orders during sessions.
+**Persistent Storage with DigitalOcean Volumes:**
+To ensure data survives container restarts and redeployments, we will attach a DigitalOcean Volume to the PostgreSQL container. The volume will be mounted to `/var/lib/postgresql/data`, which is PostgreSQL's default data directory. This ensures that all database tables, indexes, and transaction logs are stored on the persistent volume rather than the ephemeral container filesystem.
+
+**Volume Configuration:**
+- The volume will be provisioned with at least 10GB of storage (scalable as needed)
+- It will be attached to the PostgreSQL pod/container via Kubernetes PersistentVolume (PV) and PersistentVolumeClaim (PVC) resources
+- In case of pod failure or scheduled maintenance, Kubernetes will automatically remount the same volume to a new PostgreSQL instance, preserving all data
+
+This approach guarantees that user accounts, game history, and leaderboard data remain intact across deployments, crashes, or infrastructure changes.
 
 
+**Database Schema and Relationships**
+
+Our database consists of seven core tables that manage user accounts, game sessions, stock data, and real-time transactions:
+
+Users Table:
+Stores registered player information including `user_id` (primary key), `username`, `email`, `password_hash`, account `balance`, and gameplay statistics (`games_played`, `games_won`, `total_profit`). This table tracks persistent player data across all game sessions.
+
+Guests Table:
+Manages temporary guest players with `guest_id` (primary key), `session_token` for identification, and expiration timestamps. Guest records are automatically cleaned up after expiration, allowing non-registered users to play without affecting long-term leaderboards.
+
+Games Table:
+Records each game session with `game_id` (primary key), `status` (waiting/active/completed), `current_volley` (increments every 2 seconds), `max_volleys` (default 300 for 10-minute games), timestamps, and `winner_user_id` (foreign key to Users). The `current_volley` field is critical for synchronizing real-time price updates and transaction processing.
+
+Stocks Table:
+Contains reference data for tradeable stocks including `stock_id` (primary key), `ticker` symbol, `company_name`, and `initial_price`. This table serves as a static catalog of available stocks across all games.
+
+GameStockPrices Table:
+Implements the time-series price evolution for each stock within each game. Contains `game_id` (foreign key to Games), `stock_id` (foreign key to Stocks), `volley` number, computed `price`, `historical_delta` (change from API data), and `player_impact` (calculated from volley transactions). The composite unique constraint on (game_id, stock_id, volley) ensures one price record per stock per volley. This table enables the cumulative pricing model where prices evolve based on both historical market data and player trading activity.
+
+GameParticipants Table:
+Junction table linking players to game sessions. Contains `game_id` (foreign key to Games), `user_id` (foreign key to Users), `guest_id` (foreign key to Guests), `is_ai` flag for bot players, `starting_balance`, `final_portfolio_value`, and `rank`. Check constraints ensure each participant is exactly one type (registered user, guest, or AI). This table tracks per-game performance separately from lifetime user statistics.
+
+Transactions Table:
+Records every buy/sell order with `transaction_id` (primary key), `game_id` (foreign key to Games), `participant_id` (foreign key to GameParticipants), `stock_id` (foreign key to Stocks), `volley` number, `transaction_type` (buy/sell), `quantity`, `price_per_share`, and `total_value`. Transactions are indexed by (game_id, volley) for efficient aggregation during price calculations every 2 seconds.
+
+**Key Relationships**
+
+- **Users → GameParticipants** (one-to-many): A registered user can participate in multiple games, with each participation tracked separately.
+- **Guests → GameParticipants** (one-to-many): Similar to users, but guest records expire after game completion.
+- **Games → GameParticipants** (one-to-many): Each game has 4-5 participants (mix of users, guests, and AI).
+- **Games → GameStockPrices** (one-to-many): Each game maintains independent price histories for all stocks across all volleys.
+- **Games → Transactions** (one-to-many): All trades within a game are linked via game_id.
+- **GameParticipants → Transactions** (one-to-many): Each participant's trades are tracked through participant_id.
+- **Stocks → GameStockPrices** (one-to-many): Each stock has price records across multiple games and volleys.
+- **Stocks → Transactions** (one-to-many): Each transaction references which stock was traded.
+
+**Volley-Based Price Calculation System**
+
+This schema supports our volley-based gameplay mechanism, where a volley represents a discrete 2-second time interval during which player actions are batched and processed. The `current_volley` field in the Games table increments from 0 to 300 over the 10-minute game duration.
+
+At each volley increment, the system: (1) aggregates all transactions from the current volley to calculate total buy/sell volumes per stock, (2) computes `player_impact = (Total_Buy_Volume - Total_Sell_Volume) × Impact_Coefficient` where the coefficient determines how strongly trading affects prices, (3) fetches the `historical_delta` from APIs to capture real market movements, (4) calculates the new price as `Price(volley N) = Price(volley N-1) + historical_delta + player_impact`, and (5) writes the result to GameStockPrices. This cumulative model ensures both real market trends and player decisions compound over time, creating realistic market momentum. By batching transactions into 2-second intervals, we reduce database operations while ensuring synchronized price updates for all players.
 
 #### Deployment Provider
 We will deploy on DigitalOcean, which we chose over Fly.io due to its fixed pricing (more predictable for a short-term course project), infrastructure transparency, and managed Kubernetes services. Additionally, DigitalOcean offers more control over configuration and resource allocation and built-in features for load balancing, auto-scaling, and automatic upgrades.  
@@ -69,6 +114,11 @@ We will utilize DigitalOcean’s built-in monitoring dashboard to track CPU util
 
 3. Integration with Real Market Data:  
    Once the MVP is complete, stock data will be fetched from APIs such as [Yahoo Finance](https://ca.finance.yahoo.com) or [CCXT](https://github.com/ccxt/ccxt) to simulate realistic price movements and trading volatility.
+   
+   
+### Fulfillment of Course Requirements
+
+Our project satisfies all core technical requirements and exceeds the minimum advanced feature count. For core requirements, we use Docker and Docker Compose for containerized multi-container development, PostgreSQL with DigitalOcean Volumes for persistent relational data storage, Kubernetes for orchestration with service replication and load balancing, and DigitalOcean's monitoring dashboard for tracking CPU, memory, and application-specific metrics with automated alerts. For advanced features, real-time multiplayer gameplay via WebSockets fulfills the "Real-time functionality" requirement by enabling live price feeds and portfolio updates every 2 seconds. User authentication and authorization with HTTPS/WSS satisfies the "Security enhancements" requirement through token-based sessions, encrypted communication, and secrets management. Additionally, integration with Yahoo Finance or CCXT APIs meets the "Integration with external services" requirement by fetching real market data for realistic price movements. This combination ensures comprehensive coverage of both mandatory and optional project criteria.
 
 ---
 
