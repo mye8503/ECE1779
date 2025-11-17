@@ -1,119 +1,238 @@
-import { useState } from 'react'
-import React, { StrictMode, Component } from 'react'
-// import reactLogo from './assets/react.svg'
-// import viteLogo from '/vite.svg'
-import './App.css'
-import { createRoot } from 'react-dom/client'
-import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
+import React, { Component } from 'react';
+import './App.css';
 
+// API configuration - dynamically detect host
+const API_BASE_URL = `http://${window.location.hostname}:3000/api`;
+
+// Type definitions
+interface Stock {
+  stock_id: number;
+  ticker: string;
+  company_name: string;
+  initial_price: string;
+  current_price?: string;
+}
+
+interface Portfolio {
+  [ticker: string]: number; // ticker -> quantity
+}
 
 interface AppState {
-    count_A: number;
-    count_B: number;
-    stock_price_A: number;
-    stock_price_B: number;
-    money: number;
+  stocks: Stock[];
+  portfolio: Portfolio;
+  balance: number;
+  loading: boolean;
+  error: string | null;
+  lastUpdate: string;
 }
-
-
 
 class App extends Component<{}, AppState> {
-    constructor(props: any) {
-        super(props);
-        this.state = { count_A: 0, stock_price_A: 50, 
-                       count_B: 0, stock_price_B: 50, money: 1000 };
-        this.makeTimer();
+  private intervalId?: NodeJS.Timeout;
+
+  constructor(props: any) {
+    super(props);
+    this.state = {
+      stocks: [],
+      portfolio: {},
+      balance: 1000.00, // Starting balance
+      loading: true,
+      error: null,
+      lastUpdate: ''
+    };
+  }
+
+  async componentDidMount() {
+    await this.fetchStocks();
+    // Update stock prices every 5 seconds (simulating real-time updates)
+    this.intervalId = setInterval(() => {
+      this.fetchStockPrices();
+    }, 5000);
+  }
+
+  componentWillUnmount() {
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+    }
+  }
+
+  // Fetch all available stocks from backend
+  async fetchStocks() {
+    try {
+      this.setState({ loading: true, error: null });
+      const response = await fetch(`${API_BASE_URL}/stocks`);
+      const data = await response.json();
+      
+      if (data.success) {
+        this.setState({ 
+          stocks: data.stocks,
+          loading: false 
+        });
+        // Also fetch initial prices
+        await this.fetchStockPrices();
+      } else {
+        this.setState({ 
+          error: data.error || 'Failed to fetch stocks',
+          loading: false 
+        });
+      }
+    } catch (error) {
+      this.setState({ 
+        error: 'Network error: Unable to connect to backend',
+        loading: false 
+      });
+      console.error('Error fetching stocks:', error);
+    }
+  }
+
+  // Fetch current stock prices from backend
+  async fetchStockPrices() {
+    try {
+      const response = await fetch(`${API_BASE_URL}/stocks/prices`);
+      const data = await response.json();
+      
+      if (data.success) {
+        // Update stocks with current prices
+        const updatedStocks = this.state.stocks.map(stock => {
+          const priceData = data.prices.find((p: any) => p.ticker === stock.ticker);
+          return {
+            ...stock,
+            current_price: priceData ? parseFloat(priceData.current_price) : stock.initial_price
+          };
+        });
+        
+        this.setState({ 
+          stocks: updatedStocks,
+          lastUpdate: new Date().toLocaleTimeString()
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching stock prices:', error);
+    }
+  }
+
+  // Buy stock (currently just local state, will be API call later)
+  buyStock(ticker: string, price: number) {
+    if (this.state.balance >= price) {
+      this.setState(prevState => ({
+        portfolio: {
+          ...prevState.portfolio,
+          [ticker]: (prevState.portfolio[ticker] || 0) + 1
+        },
+        balance: prevState.balance - price
+      }));
+    }
+  }
+
+  // Sell stock (currently just local state, will be API call later)
+  sellStock(ticker: string, price: number) {
+    const currentHolding = this.state.portfolio[ticker] || 0;
+    if (currentHolding > 0) {
+      this.setState(prevState => ({
+        portfolio: {
+          ...prevState.portfolio,
+          [ticker]: currentHolding - 1
+        },
+        balance: prevState.balance + price
+      }));
+    }
+  }
+
+  // Calculate total portfolio value
+  getPortfolioValue(): number {
+    return Object.entries(this.state.portfolio).reduce((total, [ticker, quantity]) => {
+      const stock = this.state.stocks.find(s => s.ticker === ticker);
+      const price = parseFloat(stock?.current_price || stock?.initial_price || '0');
+      return total + (quantity * price);
+    }, 0);
+  }
+
+  render() {
+    const { stocks, portfolio, balance, loading, error, lastUpdate } = this.state;
+    const portfolioValue = this.getPortfolioValue();
+    const totalValue = balance + portfolioValue;
+
+    if (loading) {
+      return (
+        <div className="loading">
+          <h2>Loading Stock Data...</h2>
+          <p>Connecting to backend API...</p>
+        </div>
+      );
     }
 
-    makeTimer() {
-        setInterval(() => {
-            let rand_A = Math.floor((Math.random()+0.1) * 100);
-            this.setState({ stock_price_A: rand_A });
-
-            let rand_B = Math.floor((Math.random()+0.1) * 100);
-            this.setState({ stock_price_B: rand_B });
-        }, 3000);
+    if (error) {
+      return (
+        <div className="error">
+          <h2>Error</h2>
+          <p>{error}</p>
+          <button onClick={() => this.fetchStocks()}>Retry</button>
+        </div>
+      );
     }
 
+    return (
+      <div className="app">
+        <header className="app-header">
+          <h1>Stock Trading Game</h1>
+          <div className="player-info">
+            <div className="balance-info">
+              <p><strong>Cash:</strong> ${balance.toFixed(2)}</p>
+              <p><strong>Portfolio:</strong> ${portfolioValue.toFixed(2)}</p>
+              <p><strong>Total Value:</strong> ${totalValue.toFixed(2)}</p>
+            </div>
+            <div className="update-info">
+              {lastUpdate && <p><small>Last updated: {lastUpdate}</small></p>}
+            </div>
+          </div>
+        </header>
 
-    buyStockA() {
-        this.setState({ count_A: this.state.count_A + 1 });
-        this.setState({ money: this.state.money - this.state.stock_price_A });
-    }
+        <div className="stocks-grid">
+          {stocks.map((stock) => {
+            const currentPrice = parseFloat(stock.current_price || stock.initial_price);
+            const holding = portfolio[stock.ticker] || 0;
+            const canBuy = balance >= currentPrice;
+            const canSell = holding > 0;
 
-    buyStockB() {
-        this.setState({ count_B: this.state.count_B + 1 });
-        this.setState({ money: this.state.money - this.state.stock_price_B });
-    }
-
-    sellStockA() {
-        this.setState({ count_A: this.state.count_A - 1 });
-        this.setState({ money: this.state.money + this.state.stock_price_A });
-    }
-
-    sellStockB() {
-        this.setState({ count_B: this.state.count_B - 1 });
-        this.setState({ money: this.state.money + this.state.stock_price_B });
-    }
-
-
-    render () {
-        return (
-            <>
-                {/* <h1>Vite + React</h1> */}
-                <div className="player-info">
-                    <h2>Your Money: {this.state.money}</h2>
+            return (
+              <div key={stock.ticker} className="stock-card">
+                <div className="stock-header">
+                  <h3>{stock.ticker}</h3>
+                  <h4>{stock.company_name}</h4>
                 </div>
-                <div className="card">
-                    <button 
-                        disabled={this.state.money < this.state.stock_price_A}
-                        onClick={this.buyStockA.bind(this)}>
-                    Buy
-                    </button>
-                    <button 
-                        disabled={this.state.count_A==0} 
-                        onClick={this.sellStockA.bind(this)}>
+                
+                <div className="stock-price">
+                  <h2>${currentPrice.toFixed(2)}</h2>
+                  <p>Holdings: {holding} shares</p>
+                  <p>Value: ${(holding * currentPrice).toFixed(2)}</p>
+                </div>
+
+                <div className="stock-actions">
+                  <button 
+                    className="buy-btn"
+                    disabled={!canBuy}
+                    onClick={() => this.buyStock(stock.ticker, currentPrice)}
+                  >
+                    Buy (${currentPrice.toFixed(2)})
+                  </button>
+                  <button 
+                    className="sell-btn"
+                    disabled={!canSell}
+                    onClick={() => this.sellStock(stock.ticker, currentPrice)}
+                  >
                     Sell
-                    </button>
-                    <div className="stock-price">
-                        <h2>Stock Price: {this.state.stock_price_A}</h2>
-                        <h2>Number of Stocks: {this.state.count_A}</h2>
-                    </div>
-                    {/* <p>
-                    Edit <code>src/App.tsx</code> and save to test HMR
-                    </p> */}
+                  </button>
                 </div>
-                <div className="card">
-                    <button 
-                        disabled={this.state.money < this.state.stock_price_B}
-                        onClick={this.buyStockB.bind(this)}>
-                    Buy
-                    </button>
-                    <button 
-                        disabled={this.state.count_B==0} 
-                        onClick={this.sellStockB.bind(this)}>
-                    Sell
-                    </button>
-                    <div className="stock-price">
-                        <h2>Stock Price: {this.state.stock_price_B}</h2>
-                        <h2>Number of Stocks: {this.state.count_B}</h2>
-                    </div>
-                    {/* <p>
-                    Edit <code>src/App.tsx</code> and save to test HMR
-                    </p> */}
-                </div>
-                {/* <p className="read-the-docs">
-                    Click on the Vite and React logos to learn more
-                </p> */}
-            </>
-        );
-    }
+              </div>
+            );
+          })}
+        </div>
+
+        <footer className="app-footer">
+          <p>Real-time stock trading simulation</p>
+        </footer>
+      </div>
+    );
+  }
 }
 
-export default App
-
-// createRoot(document.getElementById('root')!).render(
-//   <StrictMode>
-//     <App />
-//   </StrictMode>,
-// )
+export default App;
