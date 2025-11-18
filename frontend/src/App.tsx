@@ -28,8 +28,10 @@ interface AppState {
   currentVolley: number;
   gameStatus: string;
   gameId: number | null;
+  userId: number | null;
   participantId: number | null;
   inGame: boolean;
+  inLogin: boolean;
 }
 
 class App extends Component<{}, AppState> {
@@ -47,8 +49,10 @@ class App extends Component<{}, AppState> {
       currentVolley: 0,
       gameStatus: '',
       gameId: null,
+      userId: null,
       participantId: null,
-      inGame: false
+      inGame: false,
+      inLogin: true
     };
   }
 
@@ -88,6 +92,79 @@ class App extends Component<{}, AppState> {
       });
       console.error('Error fetching stocks:', error);
     }
+  }
+
+  async login() {
+    const user = (document.querySelector('.login-input') as HTMLInputElement).value;
+    const pass = (document.querySelectorAll('.login-input')[1] as HTMLInputElement).value;
+
+    if (!user || !pass) {
+      alert('Please enter your username and password');
+      return;
+    }
+
+    console.log("Logging in with", user, pass);
+    try {
+      const response = await fetch(`${API_BASE_URL}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: user, password: pass })
+      });
+      const data = await response.json();
+      if (data.success) {
+        // Handle successful login
+        this.setState({ inLogin: false });
+        this.setState({ userId: data.user_id });
+
+        // do more stuff...
+      } else {
+        // Handle login error
+        alert(data.error || 'Login failed');
+      }
+    }
+    catch (error) {
+      console.error('Error during login:', error);
+      alert('Network error: Unable to login');
+    }
+  }
+
+  async register() {
+    const user = (document.querySelector('.login-input') as HTMLInputElement).value;
+    const pass = (document.querySelectorAll('.login-input')[1] as HTMLInputElement).value;
+
+    if (!user || !pass) {
+      alert('Please enter your username and password');
+      return;
+    }
+
+    console.log("Registering account with", user, pass);
+    try {
+      const response = await fetch(`${API_BASE_URL}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: user, password: pass })
+      });
+      const data = await response.json();
+      if (data.success) {
+        // Handle successful registration
+        this.setState({ inLogin: false });
+        this.setState({ userId: data.user_id });
+
+        // do more stuff...
+      } else {
+        // Handle registration error
+        alert(data.error || 'Registration failed');
+      }
+    }
+    catch (error) {
+      console.error('Error during registration:', error);
+      alert('Network error: Unable to register');
+    }
+  }
+
+  // Play as guest
+  async playGuest() {
+    this.setState({ inLogin: false })
   }
 
   // Join a new game
@@ -250,7 +327,7 @@ class App extends Component<{}, AppState> {
   }
 
   render() {
-    const { stocks, portfolio, balance, loading, error, lastUpdate, currentVolley, gameStatus, inGame } = this.state;
+    const { stocks, portfolio, balance, loading, error, lastUpdate, currentVolley, gameStatus, inGame, inLogin } = this.state;
     const portfolioValue = this.getPortfolioValue();
     const totalValue = balance + portfolioValue;
 
@@ -273,8 +350,42 @@ class App extends Component<{}, AppState> {
       );
     }
 
+    if (inLogin) {
+      return (
+        <div className="app">
+          <header className="app-header">
+            <h1>Stock Trading Game</h1>
+            <div className="login-container">
+              <h2>Welcome to STG</h2>
+              {/* <p>Login, Register a new account, or play as Guest</p> */}
+              <input type="text" placeholder="Username" className="login-input" />
+              <input type="text" placeholder="Password" className="login-input" />
+              <button 
+                className="login-btn"
+                onClick={() => this.login()}
+              >
+                Login
+              </button>
+              <button 
+                className="login-btn"
+                onClick={() => this.playGuest()}
+              >
+                Play as Guest
+              </button>
+              <button 
+                className="login-btn"
+                onClick={() => this.register()}
+              >
+                Register
+              </button>
+            </div>
+          </header>
+        </div>
+      );
+    }
+    
     // Show join game screen if not in a game
-    if (!inGame) {
+    if (!inLogin && !inGame) {
       return (
         <div className="app">
           <header className="app-header">

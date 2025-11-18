@@ -316,6 +316,64 @@ html, body {
   transform: translateY(0);
 }
 
+.login-container {
+  text-align: center;
+  padding: 40px;
+  margin: 40px auto;
+  max-width: 500px;
+  border: 2px solid #404040;
+  border-radius: 12px;
+  background-color: #2d2d2d;
+}
+
+.login-container h2 {
+  color: #ffffff;
+  margin-bottom: 15px;
+  font-size: 24px;
+}
+
+.login-container p {
+  color: #ccc;
+  margin-bottom: 30px;
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.login-btn {
+  background: linear-gradient(135deg, #27ae60, #2ecc71);
+  color: white;
+  border: none;
+  padding: 15px 30px;
+  font-size: 18px;
+  font-weight: bold;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(46, 204, 113, 0.3);
+  margin: 15px;
+}
+
+.login-btn:hover {
+  background: linear-gradient(135deg, #229954, #27ae60);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(46, 204, 113, 0.4);
+}
+
+.login-btn:active {
+  transform: translateY(0);
+}
+
+.login-input {
+  width: 80%;
+  padding: 10px;
+  margin: 5px 0;
+  border: 1px solid #404040;
+  border-radius: 4px;
+  background-color: #1a1a1a;
+  color: #e5e5e5;
+}
+
+
 /* Responsive design */
 @media (max-width: 768px) {
   .player-info {

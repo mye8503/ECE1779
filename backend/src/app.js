@@ -40,6 +40,107 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "Backend API is running", timestamp: new Date().toISOString() });
 });
 
+// Get all users
+app.get("/api/users", async (req, res) => {
+  try {
+    const result = await pool.query('SELECT user_id, username, created_at FROM users ORDER BY user_id');
+    res.json({
+      success: true,
+      users: result.rows
+    });
+  }
+  catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch users'
+    });
+  }
+});
+
+// Get all guests
+app.get("/api/guests", async (req, res) => {
+  try {
+    const result = await pool.query('SELECT guest_id, session_token, created_at FROM guests ORDER BY user_id');
+    res.json({
+      success: true,
+      users: result.rows
+    });
+  }
+  catch (error) {
+    console.error('Error fetching guests:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch guests'
+    });
+  }
+});
+
+// Handle user login
+app.post("/api/login", async (req, res) => {
+  try {
+    // password is not encrypted for now
+    const { username, password } = req.body;
+    const result = await pool.query(
+      'SELECT user_id, username FROM users WHERE username = $1 AND password_hash = $2',
+      [username, password]
+    );
+    if (result.rows.length === 0) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid username or password'
+      })
+    }
+    res.json({
+      success: true,
+      user: result.rows[0]
+    });
+  }
+  catch (error) {
+    console.error('Error during login:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Login failed'
+    });
+  }
+});
+
+
+// Handle user registration
+app.post("/api/register", async (req, res) => {
+  try {
+    // password is not encrypted for now
+    const { username, password } = req.body;
+    const result = await pool.query(
+      'SELECT user_id, username FROM users WHERE username = $1',
+      [username]
+    );
+
+    if (result.rows.length === 0) {
+      const insertResult = await pool.query(
+        'INSERT INTO users (username, password_hash) VALUES ($1, $2) RETURNING user_id, username',
+        [username, password]
+      );
+      return res.json({
+        success: true,
+        user: insertResult.rows[0]
+      })
+    }
+    res.json({
+      success: false,
+      error: 'User already exists'
+    });
+  }
+  catch (error) {
+    console.error('Error during registration:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Registration failed'
+    });
+  }
+});
+
+
 // Get all available stocks
 app.get("/api/stocks", async (req, res) => {
   try {

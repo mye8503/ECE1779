@@ -3,7 +3,7 @@
 CREATE TABLE IF NOT EXISTS users (
     user_id SERIAL PRIMARY KEY,
     username VARCHAR(50) UNIQUE NOT NULL,
-    email VARCHAR(255) UNIQUE NOT NULL,
+    -- email VARCHAR(255) UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     balance DECIMAL(10,2) DEFAULT 1000.00,
     games_played INTEGER DEFAULT 0,
