@@ -5,6 +5,7 @@ import StockChart from './StockChart';
 // API configuration - dynamically detect host
 const API_BASE_URL = `http://${window.location.hostname}:3000/api`;
 
+
 // Type definitions
 interface Stock {
   stock_id: number;
@@ -348,7 +349,7 @@ class App extends Component<{}, AppState> {
   }
 
   render() {
-    const { stocks, portfolio, balance, loading, error, lastUpdate, currentVolley, gameStatus, inGame, inLogin } = this.state;
+    const { stocks, portfolio, balance, loading, error, lastUpdate, currentVolley, gameStatus, inGame, inLogin, playerName } = this.state;
     const portfolioValue = this.getPortfolioValue();
     const totalValue = balance + portfolioValue;
 
@@ -389,15 +390,15 @@ class App extends Component<{}, AppState> {
               </button>
               <button 
                 className="login-btn"
-                onClick={() => this.playGuest()}
-              >
-                Play as Guest
-              </button>
-              <button 
-                className="login-btn"
                 onClick={() => this.register()}
               >
                 Register
+              </button>
+              <button 
+                className="small-btn"
+                onClick={() => this.playGuest()}
+              >
+                Play as Guest
               </button>
             </div>
           </header>
@@ -419,6 +420,13 @@ class App extends Component<{}, AppState> {
                 onClick={() => this.joinGame()}
               >
                 Join New Game
+              </button>
+              <p>Playing as: {playerName}</p>
+              <button
+                className="small-btn"
+                onClick={() => this.setState({ inLogin: true, playerId: null, playerName: '', isGuest: true })}
+              >
+                Logout
               </button>
             </div>
           </header>

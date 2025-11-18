@@ -5,6 +5,9 @@ import path from "path";
 
 const app = express();
 
+// hash function for password hashing
+// const crypto = require('crypto');
+
 // Database connection
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
@@ -43,7 +46,7 @@ app.get("/api/health", (req, res) => {
 // Get all users
 app.get("/api/users", async (req, res) => {
   try {
-    const result = await pool.query('SELECT user_id, username, created_at FROM users ORDER BY user_id');
+    const result = await pool.query('SELECT user_id, username, password created_at FROM users ORDER BY user_id');
     res.json({
       success: true,
       users: result.rows
@@ -79,11 +82,16 @@ app.get("/api/guests", async (req, res) => {
 // Handle user login
 app.post("/api/login", async (req, res) => {
   try {
-    // password is not encrypted for now
     const { username, password } = req.body;
+    
+    // // encrypt password
+    // const hash = crypto.createHash('sha256');
+    // hash.update(password);
+    // const pass_hash = hash.digest('hex')
+
     const result = await pool.query(
       'SELECT user_id, username FROM users WHERE username = $1 AND password_hash = $2',
-      [username, password]
+      [username, pass_hash]
     );
     if (result.rows.length === 0) {
       return res.status(401).json({
@@ -110,8 +118,13 @@ app.post("/api/login", async (req, res) => {
 // Handle user registration
 app.post("/api/register", async (req, res) => {
   try {
-    // password is not encrypted for now
     const { username, password } = req.body;
+
+    // // encrypt password
+    // const hash = crypto.createHash('sha256');
+    // hash.update(password);
+    // const pass_hash = hash.digest('hex')
+
     const result = await pool.query(
       'SELECT user_id, username FROM users WHERE username = $1',
       [username]
@@ -120,7 +133,7 @@ app.post("/api/register", async (req, res) => {
     if (result.rows.length === 0) {
       const insertResult = await pool.query(
         'INSERT INTO users (username, password_hash) VALUES ($1, $2) RETURNING user_id, username',
-        [username, password]
+        [username, pass_hash]
       );
       return res.json({
         success: true,

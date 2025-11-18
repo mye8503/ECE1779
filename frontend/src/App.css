@@ -373,6 +373,20 @@ html, body {
   color: #e5e5e5;
 }
 
+.small-button {
+  padding: 6px 10px;
+  font-size: 12px;
+  background: linear-gradient(135deg, #27ae60, #2ecc71);
+  color: white;
+  border: none;
+  font-weight: bold;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(46, 204, 113, 0.3);
+  margin: 15px;
+}
+
 
 /* Responsive design */
 @media (max-width: 768px) {
