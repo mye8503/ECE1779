@@ -1,4 +1,4 @@
-import pool from "../config/sql.js"
+import {pool} from "../config/sql.js"
 
 class Game {
     constructor(id, tickInterval = 2000, current_volley = 0, players_data = []) {
@@ -56,6 +56,11 @@ class Game {
         // TO-DO:
         // handle the action message
     }
+
+    stop() {
+        // TO-DO
+        // clear the game
+    }
 }
 
-export default Game;
+export {Game};
