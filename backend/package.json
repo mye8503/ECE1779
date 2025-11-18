@@ -10,11 +10,13 @@
     "test-ws": "node scripts/test-ws.js"
   },
   "dependencies": {
+    "dotenv": "^16.3.1",
     "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.0",
+    "node-fetch": "^2.7.0",
     "pg": "^8.16.3",
-    "ws": "^8.16.0",
     "uuid": "^9.0.1",
-    "dotenv": "^16.3.1"
+    "ws": "^8.16.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

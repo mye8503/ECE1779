@@ -11,6 +11,7 @@ const wsConnect = async (server) => {
             const token = req.headers["sec-websocket-protocol"]; // token passed as subprotocol header
 
             if (!gameId || !token) {
+                console.warn('Upgrade rejected: missing gameId or token', { gameId, tokenPresent: !!token });
                 socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
                 socket.destroy();
                 return;
@@ -21,12 +22,23 @@ const wsConnect = async (server) => {
             try {
                 decoded = jwt.verify(token, process.env.JWT_SECRET);
             } catch (err) {
+                console.warn('Upgrade rejected: jwt.verify failed', err && err.message);
                 socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
                 socket.destroy();
                 return;
             }
 
-            // double check that the user is part of the active game in DB
+            // In development skip DB membership checks to allow local testing without a running DB
+            if (process.env.NODE_ENV === 'development') {
+                console.log('Development mode: skipping DB checks and allowing websocket upgrade');
+                wss.handleUpgrade(req, socket, head, (ws) => {
+                    ws.user = decoded;
+                    wss.emit("connection", ws, req);
+                });
+                return;
+            }
+
+            // double check that the user is part of the active game in DB (production)
             const result = await pool.query(
                 `SELECT * FROM games
                 WHERE game_id = $1 AND status = 'active'
@@ -35,6 +47,7 @@ const wsConnect = async (server) => {
             );
 
             if (result.rowCount === 0) {
+                console.warn('DB check: no matching active game or player entry', { gameId, userId: decoded.id });
                 socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
                 socket.destroy();
                 return;

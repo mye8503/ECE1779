@@ -6,6 +6,7 @@ import { createGame,
     createUser,
     getUserById } from "./db/db.js";
 import { authMiddleware } from "./middleware/auth.js";
+import { wsConnect } from "./controllers/wssController.js";
 
 const app = express();
 
@@ -15,6 +16,21 @@ app.use(express.json());
 // Simple in-memory queue. For production move to Redis or DB-backed queue.
 const queue = [];
 const QUEUE_SIZE = parseInt(process.env.QUEUE_SIZE || "2", 10);
+
+// POST /create-user: create a new user
+app.post("/create-user", async (req, res) => {
+    try {
+        const { username, email } = req.body;
+        if (!username) {
+            return res.status(400).json({ error: "Username is required" });
+        }
+        const userId = await createUser(username, email);
+        res.status(201).json({ userId });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Server error" });
+    }
+});
 
 // GET /profile: Fetch user profile by userId
 app.get("/profile", async (req, res) => {

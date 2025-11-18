@@ -25,16 +25,28 @@ wss.on("connection", async (ws, req) => {
     // check memory for current game
     let game = games.get(gameId);
     if (!game) {
-        const db_game = await pool.query("SELECT * FROM games WHERE game_id=$1 AND status='active'", [gameId]);
+        if (process.env.NODE_ENV === 'development') {
+            console.warn(`Development mode: creating in-memory game ${gameId}`);
+            game = new Game(gameId, 2000, 0, []);
+            games.set(gameId, game);
+        } else {
+            try {
+                const db_game = await pool.query("SELECT * FROM games WHERE game_id=$1 AND status='active'", [gameId]);
 
-        if (db_game.rowCount === 0) {
-            ws.close(4002, "Game not found or inactive!");
-            return;
+                if (db_game.rowCount === 0) {
+                    ws.close(4002, "Game not found or inactive!");
+                    return;
+                }
+
+                const row = db_game.rows[0];
+                game = new Game(row.game_id, 2000, row.current_volley, row.players_data);
+                games.set(gameId, game);
+            } catch (err) {
+                console.error('Failed to load game from DB', err);
+                ws.close(1011, "Internal server error");
+                return;
+            }
         }
-
-        const row = db_game.rows[0];
-        game = new Game(row.game_id, 2000, row.current_volley, row.players_data);
-        games.set(gameId, game);
     }
 
     // ws.user is set during upgrade (see wssController)

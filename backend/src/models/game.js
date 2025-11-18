@@ -18,8 +18,8 @@ class Game {
 
         // TO-DO:
         // do math for the next volley based on current result
-
-        this.broadcast({ type: "tick", tick: this.tickCount, stock_updates});
+        const stock_updates = [];
+        this.broadcast({ type: "tick", tick: this.tick_count, stock_updates});
 
         // TO-DO:
         // sync DB
