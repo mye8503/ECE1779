@@ -218,31 +218,41 @@ class App extends Component<{}, AppState> {
             return (
               <div key={stock.ticker} className="stock-card">
                 <div className="stock-header">
-                  <h3>{stock.ticker}</h3>
-                  <h4>{stock.company_name}</h4>
+                  <div className="stock-title">
+                    <h3>{stock.ticker}</h3>
+                    <h4>{stock.company_name}</h4>
+                  </div>
+                  <div className="stock-holdings">
+                    <p>Holdings: {holding} shares</p>
+                    <p>Value: ${(holding * currentPrice).toFixed(2)}</p>
+                  </div>
                 </div>
                 
-                <div className="stock-price">
-                  <h2>${currentPrice.toFixed(2)}</h2>
-                  <p>Holdings: {holding} shares</p>
-                  <p>Value: ${(holding * currentPrice).toFixed(2)}</p>
+                <div className="stock-center">
+                  {/* Future chart space */}
                 </div>
 
-                <div className="stock-actions">
-                  <button 
-                    className="buy-btn"
-                    disabled={!canBuy}
-                    onClick={() => this.buyStock(stock.ticker, currentPrice)}
-                  >
-                    Buy
-                  </button>
-                  <button 
-                    className="sell-btn"
-                    disabled={!canSell}
-                    onClick={() => this.sellStock(stock.ticker, currentPrice)}
-                  >
-                    Sell
-                  </button>
+                <div className="stock-bottom">
+                  <div className="stock-price">
+                    <h2>${currentPrice.toFixed(2)}</h2>
+                  </div>
+
+                  <div className="stock-actions">
+                    <button 
+                      className="buy-btn"
+                      disabled={!canBuy}
+                      onClick={() => this.buyStock(stock.ticker, currentPrice)}
+                    >
+                      Buy
+                    </button>
+                    <button 
+                      className="sell-btn"
+                      disabled={!canSell}
+                      onClick={() => this.sellStock(stock.ticker, currentPrice)}
+                    >
+                      Sell
+                    </button>
+                  </div>
                 </div>
               </div>
             );

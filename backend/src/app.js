@@ -197,7 +197,16 @@ async function updateStockPrices() {
       );
       clearInterval(priceUpdateInterval);
       console.log('Price update interval stopped');
-      return; // Stop updating prices
+      
+      // Auto-restart with a new demo game after 5 seconds
+      console.log('Starting new demo game in 5 seconds...');
+      setTimeout(async () => {
+        currentVolley = 0; // Reset volley counter
+        await createDemoGame();
+        priceUpdateInterval = setInterval(updateStockPrices, 2000);
+        console.log('New demo game started with continuous price updates');
+      }, 5000);
+      return; // Stop current game updates
     }
     
     // Update game volley
