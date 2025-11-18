@@ -393,3 +393,99 @@ html, body {
     transform: translateX(-50%) translateY(-40px);
   }
 }
+
+/* Game Results Screen */
+.results-title {
+  text-align: center;
+  padding: 20px 0;
+}
+
+.results-title h2 {
+  font-size: 32px;
+  margin: 10px 0;
+  color: #2ecc71;
+}
+
+.results-title p {
+  font-size: 18px;
+  color: #999;
+}
+
+.results-container {
+  max-width: 900px;
+  margin: 200px auto 40px;
+  padding: 40px;
+  background-color: #2d2d2d;
+  border: 1px solid #404040;
+  border-radius: 12px;
+}
+
+.leaderboard {
+  margin-bottom: 30px;
+  overflow-x: auto;
+}
+
+.results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.results-table thead {
+  background-color: #1a1a1a;
+  display: table-header-group;
+}
+
+.results-table thead tr {
+  background-color: #1a1a1a;
+}
+
+.results-table th {
+  padding: 12px;
+  text-align: left;
+  color: #ffffff;
+  font-weight: bold;
+  border-bottom: 2px solid #27ae60;
+  background-color: #1a1a1a;
+}
+
+.results-table td {
+  padding: 12px;
+  border-bottom: 1px solid #404040;
+  color: #ccc;
+}
+
+.results-table tbody tr {
+  transition: background-color 0.2s;
+}
+
+.results-table tbody tr:hover {
+  background-color: #353535;
+}
+
+.results-table tbody tr.current-player {
+  background-color: #1a3a1a;
+  border: 1px solid #27ae60;
+}
+
+.rank-cell {
+  font-weight: bold;
+  color: #2ecc71;
+  font-size: 16px;
+}
+
+.player-name-cell {
+  color: #e5e5e5;
+  font-weight: 500;
+}
+
+.total-value-cell {
+  color: #2ecc71;
+  font-size: 15px;
+}
+
+.results-actions {
+  text-align: center;
+  padding-top: 20px;
+  border-top: 1px solid #404040;
+}

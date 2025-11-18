@@ -22,6 +22,19 @@ interface Notification {
   id: number;
   ticker: string;
   impact: number;
+  transactionType: 'buy' | 'sell';
+}
+
+interface GameResult {
+  participant_id: number;
+  guest_id: number;
+  user_id: number | null;
+  player_name: string;
+  starting_balance: number;
+  cash_remaining: number;
+  portfolio_value: number;
+  total_value: number;
+  rank: number;
 }
 
 interface AppState {
@@ -38,6 +51,8 @@ interface AppState {
   inGame: boolean;
   notifications: Notification[];
   previousPlayerImpacts: { [ticker: string]: number };
+  playerTransactions: { [key: string]: 'buy' | 'sell' }; // key: "ticker_volley"
+  gameResults: GameResult[] | null;
 }
 
 class App extends Component<{}, AppState> {
@@ -58,7 +73,9 @@ class App extends Component<{}, AppState> {
       participantId: null,
       inGame: false,
       notifications: [],
-      previousPlayerImpacts: {}
+      previousPlayerImpacts: {},
+      playerTransactions: {},
+      gameResults: null
     };
   }
 
@@ -175,10 +192,18 @@ class App extends Component<{}, AppState> {
 
             // If impact changed, create a notification
             if (currentImpact !== previousImpact && currentImpact !== 0) {
+              // Check if we recorded this transaction
+              const transactionKey = `${priceData.ticker}_${pricesData.current_volley}`;
+              const recordedType = this.state.playerTransactions[transactionKey];
+
+              // Use recorded type if available, otherwise use API type, fallback to inferring
+              const transactionType = recordedType || priceData.last_transaction_type || (currentImpact > 0 ? 'buy' : 'sell');
+
               newNotifications.push({
                 id: Date.now() + Math.random(),
                 ticker: priceData.ticker,
-                impact: currentImpact
+                impact: currentImpact,
+                transactionType: transactionType as 'buy' | 'sell'
               });
 
               // Auto-remove notification after 1 second
@@ -192,16 +217,52 @@ class App extends Component<{}, AppState> {
             newPreviousImpacts[priceData.ticker] = currentImpact;
           });
 
-          this.setState({
-            stocks: updatedStocks,
-            portfolio: data.portfolio,
-            balance: data.balance,
-            lastUpdate: new Date().toLocaleTimeString(),
-            currentVolley: data.game.current_volley || 0,
-            gameStatus: data.game.status || '',
-            notifications: [...this.state.notifications, ...newNotifications],
-            previousPlayerImpacts: newPreviousImpacts
-          });
+          const newGameStatus = data.game.status || '';
+
+          // If game is completed, fetch results
+          if (newGameStatus === 'completed' && !this.state.gameResults) {
+            try {
+              const resultsResponse = await fetch(`${API_BASE_URL}/games/${this.state.gameId}/results`);
+              const resultsData = await resultsResponse.json();
+
+              if (resultsData.success) {
+                this.setState({
+                  stocks: updatedStocks,
+                  portfolio: data.portfolio,
+                  balance: data.balance,
+                  lastUpdate: new Date().toLocaleTimeString(),
+                  currentVolley: data.game.current_volley || 0,
+                  gameStatus: newGameStatus,
+                  notifications: [...this.state.notifications, ...newNotifications],
+                  previousPlayerImpacts: newPreviousImpacts,
+                  gameResults: resultsData.participants
+                });
+              }
+            } catch (error) {
+              console.error('Error fetching game results:', error);
+              this.setState({
+                stocks: updatedStocks,
+                portfolio: data.portfolio,
+                balance: data.balance,
+                lastUpdate: new Date().toLocaleTimeString(),
+                currentVolley: data.game.current_volley || 0,
+                gameStatus: newGameStatus,
+                notifications: [...this.state.notifications, ...newNotifications],
+                previousPlayerImpacts: newPreviousImpacts
+              });
+            }
+          } else {
+            this.setState({
+              stocks: updatedStocks,
+              portfolio: data.portfolio,
+              balance: data.balance,
+              lastUpdate: new Date().toLocaleTimeString(),
+              currentVolley: data.game.current_volley || 0,
+              gameStatus: newGameStatus,
+              notifications: [...this.state.notifications, ...newNotifications],
+              previousPlayerImpacts: newPreviousImpacts
+            });
+          }
         }
       }
     } catch (error) {
@@ -228,11 +289,24 @@ class App extends Component<{}, AppState> {
           quantity: 1
         })
       });
-      
+
       const data = await response.json();
-      
+
       if (!data.success) {
         alert(data.error || 'Failed to buy stock');
+      } else {
+        // Record this transaction for the NEXT volley (when the impact will show)
+        const nextVolley = this.state.currentVolley + 1;
+        const key = `${ticker}_${nextVolley}`;
+        console.log(`[BUY] Recording transaction: ${key} = buy. Current volley: ${this.state.currentVolley}`);
+        this.setState(prevState => ({
+          playerTransactions: {
+            ...prevState.playerTransactions,
+            [key]: 'buy'
+          }
+        }), () => {
+          console.log(`[BUY] playerTransactions after setState:`, this.state.playerTransactions);
+        });
       }
       // Portfolio will update on next fetchGameState call
     } catch (error) {
@@ -266,11 +340,21 @@ class App extends Component<{}, AppState> {
           quantity: 1
         })
       });
-      
+
       const data = await response.json();
-      
+
       if (!data.success) {
         alert(data.error || 'Failed to sell stock');
+      } else {
+        // Record this transaction for the NEXT volley (when the impact will show)
+        const nextVolley = this.state.currentVolley + 1;
+        const key = `${ticker}_${nextVolley}`;
+        this.setState(prevState => ({
+          playerTransactions: {
+            ...prevState.playerTransactions,
+            [key]: 'sell'
+          }
+        }));
       }
       // Portfolio will update on next fetchGameState call
     } catch (error) {
@@ -321,7 +405,7 @@ class App extends Component<{}, AppState> {
             <div className="join-game-container">
               <h2>Ready to start trading?</h2>
               <p>Join a new game to start buying and selling stocks in real-time!</p>
-              <button 
+              <button
                 className="join-game-btn"
                 onClick={() => this.joinGame()}
               >
@@ -329,6 +413,67 @@ class App extends Component<{}, AppState> {
               </button>
             </div>
           </header>
+        </div>
+      );
+    }
+
+    // Show game results screen if game is completed
+    if (gameStatus === 'completed' && this.state.gameResults) {
+      const results = this.state.gameResults;
+      const playerResult = results.find(r => r.participant_id === this.state.participantId);
+
+      return (
+        <div className="app">
+          <header className="app-header">
+            <h1>Stock Trading Game</h1>
+          </header>
+
+          <div className="results-container">
+            <div className="results-title">
+              <h2>{playerResult && playerResult.rank === 1 ? '🎉 You Won! 🎉' : 'Game Over'}</h2>
+              <p>Final Standings</p>
+            </div>
+
+            <div className="leaderboard">
+              <table className="results-table">
+                <thead>
+                  <tr>
+                    <th>Rank</th>
+                    <th>Player</th>
+                    <th>Cash</th>
+                    <th>Portfolio</th>
+                    <th>Total Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {results.map((result, index) => (
+                    <tr key={result.participant_id} className={result.participant_id === this.state.participantId ? 'current-player' : ''}>
+                      <td className="rank-cell">{result.rank}</td>
+                      <td className="player-name-cell">{result.player_name}</td>
+                      <td>${result.cash_remaining.toFixed(2)}</td>
+                      <td>${result.portfolio_value.toFixed(2)}</td>
+                      <td className="total-value-cell"><strong>${result.total_value.toFixed(2)}</strong></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="results-actions">
+              <button
+                className="join-game-btn"
+                onClick={() => {
+                  this.setState({ inGame: false, gameResults: null, gameId: null, participantId: null });
+                }}
+              >
+                Play Again
+              </button>
+            </div>
+          </div>
+
+          <footer className="app-footer">
+            <p>Real-time stock trading simulation</p>
+          </footer>
         </div>
       );
     }
@@ -380,12 +525,14 @@ class App extends Component<{}, AppState> {
                 {/* Notifications for this stock */}
                 <div className="stock-notifications">
                   {stockNotifications.map((notification) => {
-                    const dollarChange = notification.impact * currentPrice;
+                    // Show the net effect of player action (opposite of player_impact)
+                    const playerEffect = -notification.impact;
+                    const isBuy = notification.transactionType === 'buy';
                     return (
                       <div key={notification.id} className="floating-notification-inline">
-                        <span className={`notification-impact-inline ${notification.impact > 0 ? 'positive' : 'negative'}`}>
-                          {notification.impact > 0 ? '📈 +' : '📉 '}
-                          ${Math.abs(dollarChange).toFixed(2)}
+                        <span className={`notification-impact-inline ${isBuy ? 'positive' : 'negative'}`}>
+                          {isBuy ? '📈 +' : '📉 '}
+                          ${Math.abs(playerEffect).toFixed(2)}
                         </span>
                       </div>
                     );

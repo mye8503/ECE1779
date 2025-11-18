@@ -102,11 +102,17 @@ app.get("/api/stocks/prices", async (req, res) => {
            WHERE gsp.stock_id = s.stock_id AND gsp.game_id = $1
            ORDER BY volley DESC LIMIT 1),
           0
-        ) as player_impact
+        ) as player_impact,
+        COALESCE(
+          (SELECT transaction_type FROM transactions
+           WHERE game_id = $1 AND stock_id = s.stock_id AND volley = $2
+           LIMIT 1),
+          NULL
+        ) as last_transaction_type
       FROM stocks s
       ORDER BY s.ticker
-    `, [gameId]);
-    
+    `, [gameId, currentGame.current_volley]);
+
     res.json({
       success: true,
       prices: result.rows,
@@ -158,7 +164,7 @@ app.post("/api/games/join", async (req, res) => {
     // Create new game
     const gameResult = await pool.query(`
       INSERT INTO games (status, current_volley, max_volleys, start_time)
-      VALUES ('active', 0, 300, CURRENT_TIMESTAMP)
+      VALUES ('active', 0, 10, CURRENT_TIMESTAMP)
       RETURNING game_id
     `);
     const gameId = gameResult.rows[0].game_id;
@@ -271,6 +277,122 @@ app.get("/api/games/:gameId/state/:participantId", async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch game state'
+    });
+  }
+});
+
+// Get game results - all participants and their final portfolio values
+app.get("/api/games/:gameId/results", async (req, res) => {
+  try {
+    const { gameId } = req.params;
+
+    // Get game info
+    const gameResult = await pool.query(`
+      SELECT game_id, status, current_volley, max_volleys, start_time, end_time
+      FROM games WHERE game_id = $1
+    `, [gameId]);
+
+    if (gameResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Game not found' });
+    }
+
+    const game = gameResult.rows[0];
+
+    // Get all participants in this game with their portfolio values
+    const participantsResult = await pool.query(`
+      SELECT
+        gp.participant_id,
+        gp.guest_id,
+        gp.user_id,
+        gp.starting_balance,
+        g.session_token as guest_name
+      FROM gameparticipants gp
+      LEFT JOIN guests g ON gp.guest_id = g.guest_id
+      WHERE gp.game_id = $1
+      ORDER BY gp.participant_id
+    `, [gameId]);
+
+    // For each participant, calculate their final portfolio value
+    const participantsWithValues = await Promise.all(
+      participantsResult.rows.map(async (participant) => {
+        // Get current stock holdings and prices
+        const portfolioResult = await pool.query(`
+          SELECT
+            s.ticker,
+            s.stock_id,
+            SUM(CASE WHEN t.transaction_type = 'buy' THEN t.quantity ELSE -t.quantity END) as quantity
+          FROM transactions t
+          JOIN stocks s ON t.stock_id = s.stock_id
+          WHERE t.participant_id = $1 AND t.game_id = $2
+          GROUP BY s.ticker, s.stock_id
+          HAVING SUM(CASE WHEN t.transaction_type = 'buy' THEN t.quantity ELSE -t.quantity END) > 0
+        `, [participant.participant_id, gameId]);
+
+        // Get cash remaining
+        const cashResult = await pool.query(`
+          SELECT SUM(CASE WHEN transaction_type = 'buy' THEN -total_value ELSE total_value END) as net_cash_change
+          FROM transactions
+          WHERE participant_id = $1 AND game_id = $2
+        `, [participant.participant_id, gameId]);
+
+        const startingBalance = parseFloat(participant.starting_balance);
+        const netCashChange = parseFloat(cashResult.rows[0]?.net_cash_change || 0);
+        const cashRemaining = startingBalance + netCashChange;
+
+        // Calculate portfolio value (sum of current stock prices × quantities)
+        let portfolioValue = 0;
+        for (const holding of portfolioResult.rows) {
+          // Get current price for this stock in this game
+          const priceResult = await pool.query(`
+            SELECT price FROM gamestockprices
+            WHERE game_id = $1 AND stock_id = $2
+            ORDER BY volley DESC
+            LIMIT 1
+          `, [gameId, holding.stock_id]);
+
+          const currentPrice = parseFloat(priceResult.rows[0]?.price || 0);
+          portfolioValue += currentPrice * holding.quantity;
+        }
+
+        const totalValue = cashRemaining + portfolioValue;
+
+        return {
+          participant_id: participant.participant_id,
+          guest_id: participant.guest_id,
+          user_id: participant.user_id,
+          player_name: participant.guest_name ? `Guest ${participant.guest_id}` : 'Unknown',
+          starting_balance: startingBalance,
+          cash_remaining: cashRemaining,
+          portfolio_value: portfolioValue,
+          total_value: totalValue
+        };
+      })
+    );
+
+    // Sort by total value descending and add ranks
+    participantsWithValues.sort((a, b) => b.total_value - a.total_value);
+    const resultsWithRanks = participantsWithValues.map((p, index) => ({
+      ...p,
+      rank: index + 1
+    }));
+
+    res.json({
+      success: true,
+      game: {
+        game_id: game.game_id,
+        status: game.status,
+        current_volley: game.current_volley,
+        max_volleys: game.max_volleys,
+        start_time: game.start_time,
+        end_time: game.end_time
+      },
+      participants: resultsWithRanks
+    });
+  } catch (error) {
+    console.error('Error fetching game results:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch game results'
     });
   }
 });
@@ -525,7 +647,9 @@ async function updateGamePrices(gameId) {
     const stocks = await pool.query('SELECT stock_id FROM stocks');
 
     // Impact coefficient - controls how much player trading affects prices
-    const IMPACT_COEFFICIENT = 0.5;
+    // Lower values = smaller impact per share (more realistic)
+    // A value of 0.1 means each net share traded creates 0.1 point of impact
+    const IMPACT_COEFFICIENT = 0.1;
 
     for (const stock of stocks.rows) {
       // Get previous price
@@ -559,10 +683,15 @@ async function updateGamePrices(gameId) {
 
       const totalBuyVolume = parseFloat(buyResult.rows[0].total_buy_volume);
       const totalSellVolume = parseFloat(sellResult.rows[0].total_sell_volume);
-      const playerImpact = (totalBuyVolume - totalSellVolume) * IMPACT_COEFFICIENT;
 
       // Generate random historical delta (±5%)
       const historicalDelta = (Math.random() - 0.5) * 0.1 * prevPrice;
+
+      // Calculate player impact from net trading volume
+      // player_impact = (buy_volume - sell_volume) × impact_coefficient
+      // This creates realistic price pressure: buying pushes up, selling pushes down
+      const netVolume = totalBuyVolume - totalSellVolume;
+      const playerImpact = netVolume * IMPACT_COEFFICIENT;
 
       // Calculate new price: previous + historical_delta + player_impact
       const newPrice = Math.max(0.01, parseFloat(prevPrice) + historicalDelta + playerImpact);
