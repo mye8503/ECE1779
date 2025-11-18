@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "vite",
-    "build": "tsc -b && vite build",
+  "build:frontend": "vite build --root ../frontend",
+  "build": "tsc -b && npm run build:frontend",
     "lint": "eslint .",
     "preview": "vite preview"
   },
