@@ -61,7 +61,7 @@ app.get("/api/users", async (req, res) => {
 // Get all guests
 app.get("/api/guests", async (req, res) => {
   try {
-    const result = await pool.query('SELECT guest_id, session_token, created_at FROM guests ORDER BY user_id');
+    const result = await pool.query('SELECT guest_id, session_token, created_at FROM guests ORDER BY guest_id');
     res.json({
       success: true,
       users: result.rows
@@ -93,7 +93,8 @@ app.post("/api/login", async (req, res) => {
     }
     res.json({
       success: true,
-      user: result.rows[0]
+      user_id: result.rows[0].user_id,
+      username: result.rows[0].username
     });
   }
   catch (error) {
@@ -140,6 +141,28 @@ app.post("/api/register", async (req, res) => {
   }
 });
 
+// Handle guest registration
+app.post("/api/guests/register", async (req, res) => {
+  try {
+    const insertResult = await pool.query(`
+      INSERT INTO guests (session_token, expires_at)
+      VALUES ($1, $2)
+      RETURNING guest_id
+    `, [`guest_${Date.now()}_${Math.random()}`, new Date(Date.now() + 24*60*60*1000)]);
+
+    res.json({
+      success: true,
+      guest_id: insertResult.rows[0].guest_id
+    });
+  }
+  catch (error) {
+    console.error('Error during guest registration:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Guest registration failed'
+    });
+  }
+});
 
 // Get all available stocks
 app.get("/api/stocks", async (req, res) => {
@@ -248,7 +271,7 @@ app.get("/api/stocks/:ticker", async (req, res) => {
 // Create and join a new game (single player for now)
 app.post("/api/games/join", async (req, res) => {
   try {
-    const { playerName = 'Guest Player' } = req.body;
+    const {isGuest, playerId, playerName } = req.body;
     
     // Create new game
     const gameResult = await pool.query(`
@@ -258,21 +281,25 @@ app.post("/api/games/join", async (req, res) => {
     `);
     const gameId = gameResult.rows[0].game_id;
     
-    // Create guest player (since no auth yet)
-    const guestResult = await pool.query(`
-      INSERT INTO guests (session_token, expires_at)
-      VALUES ($1, $2)
-      RETURNING guest_id
-    `, [`guest_${Date.now()}_${Math.random()}`, new Date(Date.now() + 24*60*60*1000)]);
-    const guestId = guestResult.rows[0].guest_id;
-    
     // Add participant to game
-    const participantResult = await pool.query(`
-      INSERT INTO gameparticipants (game_id, guest_id, starting_balance)
-      VALUES ($1, $2, 1000.00)
-      RETURNING participant_id
-    `, [gameId, guestId]);
-    const participantId = participantResult.rows[0].participant_id;
+    let participantId;
+    if (isGuest) {
+      const participantResult = await pool.query(`
+        INSERT INTO gameparticipants (game_id, guest_id, starting_balance)
+        VALUES ($1, $2, 1000.00)
+        RETURNING participant_id
+      `, [gameId, playerId]);
+      participantId = participantResult.rows[0].participant_id;
+    }
+
+    else {
+      const participantResult = await pool.query(`
+        INSERT INTO gameparticipants (game_id, user_id, starting_balance)
+        VALUES ($1, $2, 1000.00)
+        RETURNING participant_id
+      `, [gameId, playerId]);
+      participantId = participantResult.rows[0].participant_id;      
+    }
     
     // Initialize stock prices for this game
     const stocks = await pool.query('SELECT stock_id, initial_price FROM stocks');
@@ -290,7 +317,6 @@ app.post("/api/games/join", async (req, res) => {
       success: true,
       game_id: gameId,
       participant_id: participantId,
-      guest_id: guestId,
       starting_balance: 1000.00,
       message: `Joined game ${gameId} as ${playerName}`
     });

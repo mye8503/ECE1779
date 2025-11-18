@@ -28,7 +28,9 @@ interface AppState {
   currentVolley: number;
   gameStatus: string;
   gameId: number | null;
-  userId: number | null;
+  playerId: number | null;
+  isGuest: boolean;
+  playerName: string;
   participantId: number | null;
   inGame: boolean;
   inLogin: boolean;
@@ -49,7 +51,9 @@ class App extends Component<{}, AppState> {
       currentVolley: 0,
       gameStatus: '',
       gameId: null,
-      userId: null,
+      playerId: null,
+      isGuest: true,
+      playerName: '',
       participantId: null,
       inGame: false,
       inLogin: true
@@ -112,11 +116,11 @@ class App extends Component<{}, AppState> {
       });
       const data = await response.json();
       if (data.success) {
+        console.log("Login successful:", data);
         // Handle successful login
-        this.setState({ inLogin: false });
-        this.setState({ userId: data.user_id });
+        this.setState({ inLogin: false, isGuest: false, playerId: data.user_id, playerName: data.username });
 
-        // do more stuff...
+        // do more stuff?
       } else {
         // Handle login error
         alert(data.error || 'Login failed');
@@ -147,10 +151,11 @@ class App extends Component<{}, AppState> {
       const data = await response.json();
       if (data.success) {
         // Handle successful registration
-        this.setState({ inLogin: false });
-        this.setState({ userId: data.user_id });
+        // this.setState({ inLogin: false });
+        // this.setState({ userId: data.user_id });
+        alert('Registration successful! You can now log in.');
 
-        // do more stuff...
+        // do more stuff?
       } else {
         // Handle registration error
         alert(data.error || 'Registration failed');
@@ -164,17 +169,33 @@ class App extends Component<{}, AppState> {
 
   // Play as guest
   async playGuest() {
-    this.setState({ inLogin: false })
+    try {
+      const response = await fetch(`${API_BASE_URL}/guests/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await response.json();
+      if (data.success) {
+        this.setState({ inLogin: false, isGuest: true, 
+          playerId: data.guest_id, playerName: 'Guest Player' });
+      }
+    }
+    catch (error) {
+      console.error('Error during guest registration:', error);
+      alert('Network error: Unable to register guest');
+    }
   }
 
   // Join a new game
   async joinGame() {
+    console.log("Joining new game as", this.state.isGuest ? 'Guest' : 'User', this.state.playerId);
     try {
       this.setState({ loading: true, error: null });
       const response = await fetch(`${API_BASE_URL}/games/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ playerName: 'Player' })
+        body: JSON.stringify({ isGuest: this.state.isGuest, playerId: this.state.playerId,
+          playerName: this.state.playerName })
       });
       
       const data = await response.json();
