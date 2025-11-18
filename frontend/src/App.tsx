@@ -1,5 +1,6 @@
 import React, { Component } from 'react';
 import './App.css';
+import StockChart from './StockChart';
 
 // API configuration - dynamically detect host
 const API_BASE_URL = `http://${window.location.hostname}:3000/api`;
@@ -26,6 +27,9 @@ interface AppState {
   lastUpdate: string;
   currentVolley: number;
   gameStatus: string;
+  gameId: number | null;
+  participantId: number | null;
+  inGame: boolean;
 }
 
 class App extends Component<{}, AppState> {
@@ -36,21 +40,21 @@ class App extends Component<{}, AppState> {
     this.state = {
       stocks: [],
       portfolio: {},
-      balance: 1000.00, // Starting balance
+      balance: 1000.00,
       loading: true,
       error: null,
       lastUpdate: '',
       currentVolley: 0,
-      gameStatus: ''
+      gameStatus: '',
+      gameId: null,
+      participantId: null,
+      inGame: false
     };
   }
 
   async componentDidMount() {
     await this.fetchStocks();
-    // Update stock prices every 2 seconds (matching backend volley timing)
-    this.intervalId = setInterval(() => {
-      this.fetchStockPrices();
-    }, 2000);
+    // Don't start price updates until in a game
   }
 
   componentWillUnmount() {
@@ -71,8 +75,6 @@ class App extends Component<{}, AppState> {
           stocks: data.stocks,
           loading: false 
         });
-        // Also fetch initial prices
-        await this.fetchStockPrices();
       } else {
         this.setState({ 
           error: data.error || 'Failed to fetch stocks',
@@ -88,58 +90,153 @@ class App extends Component<{}, AppState> {
     }
   }
 
-  // Fetch current stock prices from backend
-  async fetchStockPrices() {
+  // Join a new game
+  async joinGame() {
     try {
-      const response = await fetch(`${API_BASE_URL}/stocks/prices`);
+      this.setState({ loading: true, error: null });
+      const response = await fetch(`${API_BASE_URL}/games/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerName: 'Player' })
+      });
+      
       const data = await response.json();
       
       if (data.success) {
-        // Update stocks with current prices
-        const updatedStocks = this.state.stocks.map(stock => {
-          const priceData = data.prices.find((p: any) => p.ticker === stock.ticker);
-          return {
-            ...stock,
-            current_price: priceData ? parseFloat(priceData.current_price) : stock.initial_price
-          };
+        this.setState({
+          gameId: data.game_id,
+          participantId: data.participant_id,
+          balance: data.starting_balance,
+          inGame: true,
+          loading: false
         });
         
+        // Start updating game state every 2 seconds
+        this.intervalId = setInterval(() => {
+          this.fetchGameState();
+        }, 2000);
+        
+        // Initial fetch
+        await this.fetchGameState();
+      } else {
         this.setState({ 
-          stocks: updatedStocks,
-          lastUpdate: new Date().toLocaleTimeString(),
-          currentVolley: data.current_volley || 0,
-          gameStatus: data.game_status || ''
+          error: data.error || 'Failed to join game',
+          loading: false 
         });
       }
     } catch (error) {
-      console.error('Error fetching stock prices:', error);
+      this.setState({ 
+        error: 'Network error: Unable to join game',
+        loading: false 
+      });
+      console.error('Error joining game:', error);
     }
   }
 
-  // Buy stock (currently just local state, will be API call later)
-  buyStock(ticker: string, price: number) {
-    if (this.state.balance >= price) {
-      this.setState(prevState => ({
-        portfolio: {
-          ...prevState.portfolio,
-          [ticker]: (prevState.portfolio[ticker] || 0) + 1
-        },
-        balance: prevState.balance - price
-      }));
+  // Fetch current game state and portfolio
+  async fetchGameState() {
+    if (!this.state.gameId || !this.state.participantId) return;
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/games/${this.state.gameId}/state/${this.state.participantId}`);
+      const data = await response.json();
+      
+      if (data.success) {
+        // Update stocks with current prices from the game
+        const pricesResponse = await fetch(`${API_BASE_URL}/stocks/prices?gameId=${this.state.gameId}`);
+        const pricesData = await pricesResponse.json();
+        
+        if (pricesData.success) {
+          const updatedStocks = this.state.stocks.map(stock => {
+            const priceData = pricesData.prices.find((p: any) => p.ticker === stock.ticker);
+            return {
+              ...stock,
+              current_price: priceData ? parseFloat(priceData.current_price) : stock.initial_price
+            };
+          });
+          
+          this.setState({ 
+            stocks: updatedStocks,
+            portfolio: data.portfolio,
+            balance: data.balance,
+            lastUpdate: new Date().toLocaleTimeString(),
+            currentVolley: data.game.current_volley || 0,
+            gameStatus: data.game.status || ''
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching game state:', error);
     }
   }
 
-  // Sell stock (currently just local state, will be API call later)
-  sellStock(ticker: string, price: number) {
+  // Buy stock via API
+  async buyStock(ticker: string, price: number) {
+    if (!this.state.inGame || !this.state.gameId || !this.state.participantId) {
+      alert('Please join a game first');
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/transactions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gameId: this.state.gameId,
+          participantId: this.state.participantId,
+          ticker,
+          transactionType: 'buy',
+          quantity: 1
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (!data.success) {
+        alert(data.error || 'Failed to buy stock');
+      }
+      // Portfolio will update on next fetchGameState call
+    } catch (error) {
+      console.error('Error buying stock:', error);
+      alert('Network error: Failed to buy stock');
+    }
+  }
+
+  // Sell stock via API
+  async sellStock(ticker: string, price: number) {
+    if (!this.state.inGame || !this.state.gameId || !this.state.participantId) {
+      alert('Please join a game first');
+      return;
+    }
+
     const currentHolding = this.state.portfolio[ticker] || 0;
-    if (currentHolding > 0) {
-      this.setState(prevState => ({
-        portfolio: {
-          ...prevState.portfolio,
-          [ticker]: currentHolding - 1
-        },
-        balance: prevState.balance + price
-      }));
+    if (currentHolding <= 0) {
+      alert('You don\'t own any shares of this stock');
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/transactions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gameId: this.state.gameId,
+          participantId: this.state.participantId,
+          ticker,
+          transactionType: 'sell',
+          quantity: 1
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (!data.success) {
+        alert(data.error || 'Failed to sell stock');
+      }
+      // Portfolio will update on next fetchGameState call
+    } catch (error) {
+      console.error('Error selling stock:', error);
+      alert('Network error: Failed to sell stock');
     }
   }
 
@@ -153,15 +250,15 @@ class App extends Component<{}, AppState> {
   }
 
   render() {
-    const { stocks, portfolio, balance, loading, error, lastUpdate, currentVolley, gameStatus } = this.state;
+    const { stocks, portfolio, balance, loading, error, lastUpdate, currentVolley, gameStatus, inGame } = this.state;
     const portfolioValue = this.getPortfolioValue();
     const totalValue = balance + portfolioValue;
 
     if (loading) {
       return (
         <div className="loading">
-          <h2>Loading Stock Data...</h2>
-          <p>Connecting to backend API...</p>
+          <h2>Loading...</h2>
+          <p>{inGame ? 'Joining game...' : 'Loading stock data...'}</p>
         </div>
       );
     }
@@ -171,7 +268,28 @@ class App extends Component<{}, AppState> {
         <div className="error">
           <h2>Error</h2>
           <p>{error}</p>
-          <button onClick={() => this.fetchStocks()}>Retry</button>
+          <button onClick={() => inGame ? this.joinGame() : this.fetchStocks()}>Retry</button>
+        </div>
+      );
+    }
+
+    // Show join game screen if not in a game
+    if (!inGame) {
+      return (
+        <div className="app">
+          <header className="app-header">
+            <h1>Stock Trading Game</h1>
+            <div className="join-game-container">
+              <h2>Ready to start trading?</h2>
+              <p>Join a new game to start buying and selling stocks in real-time!</p>
+              <button 
+                className="join-game-btn"
+                onClick={() => this.joinGame()}
+              >
+                Join New Game
+              </button>
+            </div>
+          </header>
         </div>
       );
     }
@@ -229,7 +347,7 @@ class App extends Component<{}, AppState> {
                 </div>
                 
                 <div className="stock-center">
-                  {/* Future chart space */}
+                  <StockChart ticker={stock.ticker} gameId={this.state.gameId} />
                 </div>
 
                 <div className="stock-bottom">
