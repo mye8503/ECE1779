@@ -87,16 +87,22 @@ app.get("/api/stocks/prices", async (req, res) => {
     
     // Get prices from the specified game or use initial prices
     const result = await pool.query(`
-      SELECT 
+      SELECT
         s.stock_id,
         s.ticker,
         s.company_name,
         COALESCE(
-          (SELECT price FROM gamestockprices gsp 
+          (SELECT price FROM gamestockprices gsp
            WHERE gsp.stock_id = s.stock_id AND gsp.game_id = $1
-           ORDER BY volley DESC LIMIT 1), 
+           ORDER BY volley DESC LIMIT 1),
           s.initial_price
-        ) as current_price
+        ) as current_price,
+        COALESCE(
+          (SELECT player_impact FROM gamestockprices gsp
+           WHERE gsp.stock_id = s.stock_id AND gsp.game_id = $1
+           ORDER BY volley DESC LIMIT 1),
+          0
+        ) as player_impact
       FROM stocks s
       ORDER BY s.ticker
     `, [gameId]);
@@ -517,14 +523,17 @@ async function updateGamePrices(gameId) {
     );
     
     const stocks = await pool.query('SELECT stock_id FROM stocks');
-    
+
+    // Impact coefficient - controls how much player trading affects prices
+    const IMPACT_COEFFICIENT = 0.5;
+
     for (const stock of stocks.rows) {
       // Get previous price
       const prevResult = await pool.query(`
-        SELECT price FROM gamestockprices 
+        SELECT price FROM gamestockprices
         WHERE game_id = $1 AND stock_id = $2 AND volley = $3
       `, [gameId, stock.stock_id, currentVolley]);
-      
+
       let prevPrice = prevResult.rows[0]?.price;
       if (!prevPrice) {
         // Fallback to initial price
@@ -534,21 +543,67 @@ async function updateGamePrices(gameId) {
         );
         prevPrice = initialResult.rows[0].initial_price;
       }
-      
-      // Generate random historical delta (±2% to ±5%)
-      const historicalDelta = (Math.random() - 0.5) * 0.1 * prevPrice; // ±5%
-      const newPrice = Math.max(0.01, parseFloat(prevPrice) + historicalDelta);
-      
+
+      // Calculate player impact from transactions in the current volley (transactions that just happened)
+      const buyResult = await pool.query(`
+        SELECT COALESCE(SUM(quantity), 0) as total_buy_volume
+        FROM transactions
+        WHERE game_id = $1 AND stock_id = $2 AND volley = $3 AND transaction_type = 'buy'
+      `, [gameId, stock.stock_id, currentVolley]);
+
+      const sellResult = await pool.query(`
+        SELECT COALESCE(SUM(quantity), 0) as total_sell_volume
+        FROM transactions
+        WHERE game_id = $1 AND stock_id = $2 AND volley = $3 AND transaction_type = 'sell'
+      `, [gameId, stock.stock_id, currentVolley]);
+
+      const totalBuyVolume = parseFloat(buyResult.rows[0].total_buy_volume);
+      const totalSellVolume = parseFloat(sellResult.rows[0].total_sell_volume);
+      const playerImpact = (totalBuyVolume - totalSellVolume) * IMPACT_COEFFICIENT;
+
+      // Generate random historical delta (±5%)
+      const historicalDelta = (Math.random() - 0.5) * 0.1 * prevPrice;
+
+      // Calculate new price: previous + historical_delta + player_impact
+      const newPrice = Math.max(0.01, parseFloat(prevPrice) + historicalDelta + playerImpact);
+
       // Insert new price record
       await pool.query(`
         INSERT INTO gamestockprices (game_id, stock_id, volley, price, historical_delta, player_impact)
-        VALUES ($1, $2, $3, $4, $5, 0)
-      `, [gameId, stock.stock_id, nextVolley, newPrice.toFixed(2), historicalDelta.toFixed(2)]);
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `, [gameId, stock.stock_id, nextVolley, newPrice.toFixed(2), historicalDelta.toFixed(2), playerImpact.toFixed(2)]);
     }
-    
+
     console.log(`Game ${gameId}: Updated prices for volley ${nextVolley}`);
   } catch (error) {
     console.error(`Error updating prices for game ${gameId}:`, error);
+  }
+}
+
+// Cleanup function to mark stale games as completed on startup
+async function cleanupStaleGames() {
+  try {
+    console.log('Checking for stale games that should have ended...');
+
+    // Mark games as completed if they were started more than 10 minutes ago and are still active
+    const result = await pool.query(`
+      UPDATE games
+      SET status = 'completed', end_time = CURRENT_TIMESTAMP
+      WHERE status = 'active'
+        AND start_time < NOW() - INTERVAL '10 minutes'
+      RETURNING game_id, start_time, current_volley
+    `);
+
+    if (result.rows.length > 0) {
+      console.log(`Cleaned up ${result.rows.length} stale games:`);
+      result.rows.forEach(game => {
+        console.log(`  - Game ${game.game_id}: started at ${game.start_time}, volley ${game.current_volley}`);
+      });
+    } else {
+      console.log('No stale games found.');
+    }
+  } catch (error) {
+    console.error('Error during stale games cleanup:', error);
   }
 }
 
@@ -556,6 +611,10 @@ async function updateGamePrices(gameId) {
 const port = process.env.PORT || 3000;
 app.listen(port, async () => {
   console.log(`Server running on port ${port}`);
+
+  // Run cleanup on startup
+  await cleanupStaleGames();
+
   console.log('Game server ready - waiting for players to join games');
 });
 

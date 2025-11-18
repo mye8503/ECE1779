@@ -339,3 +339,57 @@ html, body {
     grid-template-columns: 1fr;
   }
 }
+
+/* Stock notifications */
+.stock-notifications {
+  position: relative;
+  height: 0;
+  pointer-events: none;
+  z-index: 500;
+}
+
+.floating-notification-inline {
+  position: absolute;
+  top: -30px;
+  left: 50%;
+  transform: translateX(-50%);
+  animation: floatUp 1s ease-in-out forwards;
+  pointer-events: none;
+}
+
+.notification-impact-inline {
+  background-color: rgba(45, 45, 45, 0.95);
+  border: 2px solid #404040;
+  border-radius: 8px;
+  padding: 8px 15px;
+  display: inline-block;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  font-weight: bold;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.notification-impact-inline.positive {
+  color: #27ae60;
+  border-color: #27ae60;
+}
+
+.notification-impact-inline.negative {
+  color: #e74c3c;
+  border-color: #e74c3c;
+}
+
+@keyframes floatUp {
+  0% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  80% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(-20px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-40px);
+  }
+}

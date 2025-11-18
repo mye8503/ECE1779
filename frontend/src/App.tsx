@@ -18,6 +18,12 @@ interface Portfolio {
   [ticker: string]: number; // ticker -> quantity
 }
 
+interface Notification {
+  id: number;
+  ticker: string;
+  impact: number;
+}
+
 interface AppState {
   stocks: Stock[];
   portfolio: Portfolio;
@@ -30,6 +36,8 @@ interface AppState {
   gameId: number | null;
   participantId: number | null;
   inGame: boolean;
+  notifications: Notification[];
+  previousPlayerImpacts: { [ticker: string]: number };
 }
 
 class App extends Component<{}, AppState> {
@@ -48,7 +56,9 @@ class App extends Component<{}, AppState> {
       gameStatus: '',
       gameId: null,
       participantId: null,
-      inGame: false
+      inGame: false,
+      notifications: [],
+      previousPlayerImpacts: {}
     };
   }
 
@@ -136,16 +146,16 @@ class App extends Component<{}, AppState> {
   // Fetch current game state and portfolio
   async fetchGameState() {
     if (!this.state.gameId || !this.state.participantId) return;
-    
+
     try {
       const response = await fetch(`${API_BASE_URL}/games/${this.state.gameId}/state/${this.state.participantId}`);
       const data = await response.json();
-      
+
       if (data.success) {
         // Update stocks with current prices from the game
         const pricesResponse = await fetch(`${API_BASE_URL}/stocks/prices?gameId=${this.state.gameId}`);
         const pricesData = await pricesResponse.json();
-        
+
         if (pricesData.success) {
           const updatedStocks = this.state.stocks.map(stock => {
             const priceData = pricesData.prices.find((p: any) => p.ticker === stock.ticker);
@@ -154,14 +164,43 @@ class App extends Component<{}, AppState> {
               current_price: priceData ? parseFloat(priceData.current_price) : stock.initial_price
             };
           });
-          
-          this.setState({ 
+
+          // Detect player impact changes and create notifications
+          const newNotifications: Notification[] = [];
+          const newPreviousImpacts = { ...this.state.previousPlayerImpacts };
+
+          pricesData.prices.forEach((priceData: any) => {
+            const currentImpact = parseFloat(priceData.player_impact) || 0;
+            const previousImpact = this.state.previousPlayerImpacts[priceData.ticker] || 0;
+
+            // If impact changed, create a notification
+            if (currentImpact !== previousImpact && currentImpact !== 0) {
+              newNotifications.push({
+                id: Date.now() + Math.random(),
+                ticker: priceData.ticker,
+                impact: currentImpact
+              });
+
+              // Auto-remove notification after 1 second
+              setTimeout(() => {
+                this.setState(prevState => ({
+                  notifications: prevState.notifications.filter(n => n.id !== newNotifications[newNotifications.length - 1].id)
+                }));
+              }, 1000);
+            }
+
+            newPreviousImpacts[priceData.ticker] = currentImpact;
+          });
+
+          this.setState({
             stocks: updatedStocks,
             portfolio: data.portfolio,
             balance: data.balance,
             lastUpdate: new Date().toLocaleTimeString(),
             currentVolley: data.game.current_volley || 0,
-            gameStatus: data.game.status || ''
+            gameStatus: data.game.status || '',
+            notifications: [...this.state.notifications, ...newNotifications],
+            previousPlayerImpacts: newPreviousImpacts
           });
         }
       }
@@ -333,8 +372,26 @@ class App extends Component<{}, AppState> {
             const canBuy = balance >= currentPrice;
             const canSell = holding > 0;
 
+            // Get notifications for this stock
+            const stockNotifications = this.state.notifications.filter(n => n.ticker === stock.ticker);
+
             return (
               <div key={stock.ticker} className="stock-card">
+                {/* Notifications for this stock */}
+                <div className="stock-notifications">
+                  {stockNotifications.map((notification) => {
+                    const dollarChange = notification.impact * currentPrice;
+                    return (
+                      <div key={notification.id} className="floating-notification-inline">
+                        <span className={`notification-impact-inline ${notification.impact > 0 ? 'positive' : 'negative'}`}>
+                          {notification.impact > 0 ? '📈 +' : '📉 '}
+                          ${Math.abs(dollarChange).toFixed(2)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
                 <div className="stock-header">
                   <div className="stock-title">
                     <h3>{stock.ticker}</h3>
@@ -345,7 +402,7 @@ class App extends Component<{}, AppState> {
                     <p>Value: ${(holding * currentPrice).toFixed(2)}</p>
                   </div>
                 </div>
-                
+
                 <div className="stock-center">
                   <StockChart ticker={stock.ticker} gameId={this.state.gameId} />
                 </div>
@@ -356,14 +413,14 @@ class App extends Component<{}, AppState> {
                   </div>
 
                   <div className="stock-actions">
-                    <button 
+                    <button
                       className="buy-btn"
                       disabled={!canBuy}
                       onClick={() => this.buyStock(stock.ticker, currentPrice)}
                     >
                       Buy
                     </button>
-                    <button 
+                    <button
                       className="sell-btn"
                       disabled={!canSell}
                       onClick={() => this.sellStock(stock.ticker, currentPrice)}
