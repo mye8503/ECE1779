@@ -24,6 +24,8 @@ interface AppState {
   loading: boolean;
   error: string | null;
   lastUpdate: string;
+  currentVolley: number;
+  gameStatus: string;
 }
 
 class App extends Component<{}, AppState> {
@@ -37,16 +39,18 @@ class App extends Component<{}, AppState> {
       balance: 1000.00, // Starting balance
       loading: true,
       error: null,
-      lastUpdate: ''
+      lastUpdate: '',
+      currentVolley: 0,
+      gameStatus: ''
     };
   }
 
   async componentDidMount() {
     await this.fetchStocks();
-    // Update stock prices every 5 seconds (simulating real-time updates)
+    // Update stock prices every 2 seconds (matching backend volley timing)
     this.intervalId = setInterval(() => {
       this.fetchStockPrices();
-    }, 5000);
+    }, 2000);
   }
 
   componentWillUnmount() {
@@ -102,7 +106,9 @@ class App extends Component<{}, AppState> {
         
         this.setState({ 
           stocks: updatedStocks,
-          lastUpdate: new Date().toLocaleTimeString()
+          lastUpdate: new Date().toLocaleTimeString(),
+          currentVolley: data.current_volley || 0,
+          gameStatus: data.game_status || ''
         });
       }
     } catch (error) {
@@ -147,7 +153,7 @@ class App extends Component<{}, AppState> {
   }
 
   render() {
-    const { stocks, portfolio, balance, loading, error, lastUpdate } = this.state;
+    const { stocks, portfolio, balance, loading, error, lastUpdate, currentVolley, gameStatus } = this.state;
     const portfolioValue = this.getPortfolioValue();
     const totalValue = balance + portfolioValue;
 
@@ -182,8 +188,24 @@ class App extends Component<{}, AppState> {
             </div>
             <div className="update-info">
               {lastUpdate && <p><small>Last updated: {lastUpdate}</small></p>}
+              {currentVolley > 0 && <p><small>Volley: {currentVolley}/300 ({gameStatus})</small></p>}
             </div>
           </div>
+          
+          {currentVolley > 0 && (
+            <div className="progress-container">
+              <div className="progress-bar">
+                <div 
+                  className="progress-fill" 
+                  style={{ width: `${Math.min((currentVolley / 300) * 100, 100)}%` }}
+                ></div>
+              </div>
+              <div className="progress-text">
+                <span>{Math.floor(currentVolley * 2 / 60)}:{((currentVolley * 2) % 60).toString().padStart(2, '0')} elapsed</span>
+                <span>{Math.floor((300 - currentVolley) * 2 / 60)}:{(((300 - currentVolley) * 2) % 60).toString().padStart(2, '0')} remaining</span>
+              </div>
+            </div>
+          )}
         </header>
 
         <div className="stocks-grid">
@@ -212,7 +234,7 @@ class App extends Component<{}, AppState> {
                     disabled={!canBuy}
                     onClick={() => this.buyStock(stock.ticker, currentPrice)}
                   >
-                    Buy (${currentPrice.toFixed(2)})
+                    Buy
                   </button>
                   <button 
                     className="sell-btn"
