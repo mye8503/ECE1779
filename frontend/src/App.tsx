@@ -1,6 +1,9 @@
 import React, { Component } from 'react';
 import './App.css';
-import StockChart from './StockChart';
+import MainMenu from './MainMenu';
+import Lobby from './Lobby';
+import GameScreen from './GameScreen';
+import ResultsScreen from './ResultsScreen';
 
 // API configuration - dynamically detect host
 const API_BASE_URL = `http://${window.location.hostname}:3000/api`;
@@ -37,6 +40,14 @@ interface GameResult {
   rank: number;
 }
 
+interface AvailableGame {
+  game_id: number;
+  status: string;
+  created_at: string;
+  player_count: number;
+  max_players: number;
+}
+
 interface AppState {
   stocks: Stock[];
   portfolio: Portfolio;
@@ -49,10 +60,17 @@ interface AppState {
   gameId: number | null;
   participantId: number | null;
   inGame: boolean;
+  inLobby: boolean;
   notifications: Notification[];
   previousPlayerImpacts: { [ticker: string]: number };
   playerTransactions: { [key: string]: 'buy' | 'sell' }; // key: "ticker_volley"
   gameResults: GameResult[] | null;
+  availableGames: AvailableGame[];
+  inLogin: boolean;
+  playerId: number | null;
+  playerName: string;
+  isGuest: boolean;
+  token: string | null;
 }
 
 class App extends Component<{}, AppState> {
@@ -72,16 +90,165 @@ class App extends Component<{}, AppState> {
       gameId: null,
       participantId: null,
       inGame: false,
+      inLobby: false,
       notifications: [],
       previousPlayerImpacts: {},
       playerTransactions: {},
-      gameResults: null
+      gameResults: null,
+      availableGames: [],
+      inLogin: true,
+      playerId: null,
+      playerName: '',
+      isGuest: true,
+      token: null
     };
   }
 
   async componentDidMount() {
+    // Try to load token from localStorage
+    const savedToken = localStorage.getItem('token');
+    if (savedToken) {
+      this.setState({ token: savedToken, inLogin: false });
+    }
     await this.fetchStocks();
     // Don't start price updates until in a game
+  }
+
+  // Helper method to get auth headers
+  getAuthHeaders(): HeadersInit {
+    const headers: HeadersInit = { 'Content-Type': 'application/json' };
+    if (this.state.token) {
+      headers['Authorization'] = `Bearer ${this.state.token}`;
+    }
+    return headers;
+  }
+
+  async login() {
+    const user = (document.querySelector('.login-input') as HTMLInputElement)?.value;
+    const pass = (document.querySelectorAll('.login-input')[1] as HTMLInputElement)?.value;
+
+    if (!user || !pass) {
+      alert('Please enter your username and password');
+      return;
+    }
+
+    console.log("Logging in with", user, pass);
+    try {
+      const response = await fetch(`${API_BASE_URL}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: user, password: pass })
+      });
+      const data = await response.json();
+      if (data.success) {
+        console.log("Login successful:", data);
+        // Store token in localStorage
+        localStorage.setItem('token', data.token);
+        this.setState({
+          inLogin: false,
+          isGuest: false,
+          playerId: data.user_id,
+          playerName: data.username,
+          token: data.token
+        });
+      } else {
+        alert(data.error || 'Login failed');
+      }
+    }
+    catch (error) {
+      console.error('Error during login:', error);
+      alert('Network error: Unable to login');
+    }
+  }
+
+  async register() {
+    const user = (document.querySelector('.login-input') as HTMLInputElement)?.value;
+    const pass = (document.querySelectorAll('.login-input')[1] as HTMLInputElement)?.value;
+
+    if (!user || !pass) {
+      alert('Please enter your username and password');
+      return;
+    }
+
+    console.log("Registering account with", user, pass);
+    try {
+      const response = await fetch(`${API_BASE_URL}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: user, password: pass })
+      });
+      const data = await response.json();
+      if (data.success) {
+        alert('Registration successful! You can now log in.');
+      } else {
+        alert(data.error || 'Registration failed');
+      }
+    }
+    catch (error) {
+      console.error('Error during registration:', error);
+      alert('Network error: Unable to register');
+    }
+  }
+
+  async playGuest() {
+    try {
+      const response = await fetch(`${API_BASE_URL}/guests/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await response.json();
+      if (data.success) {
+        // Store token in localStorage
+        localStorage.setItem('token', data.token);
+        this.setState({
+          inLogin: false,
+          isGuest: true,
+          playerId: data.guest_id,
+          playerName: 'Guest Player',
+          token: data.token
+        });
+      }
+    }
+    catch (error) {
+      console.error('Error during guest registration:', error);
+      alert('Network error: Unable to register guest');
+    }
+  }
+
+  async goToLobby() {
+    this.setState({ inLobby: true });
+    await this.fetchAvailableGames();
+  }
+
+  logout() {
+    // Clear token from localStorage
+    localStorage.removeItem('token');
+    // Reset to login screen
+    this.setState({
+      inLogin: true,
+      playerId: null,
+      playerName: '',
+      isGuest: true,
+      token: null,
+      inGame: false,
+      inLobby: false,
+      gameId: null,
+      participantId: null
+    });
+    console.log('[LOGOUT] User logged out');
+  }
+
+  async fetchAvailableGames() {
+    try {
+      const response = await fetch(`${API_BASE_URL}/games/available`);
+      const data = await response.json();
+
+      if (data.success) {
+        this.setState({ availableGames: data.games });
+      }
+    } catch (error) {
+      console.error('Error fetching available games:', error);
+    }
   }
 
   componentWillUnmount() {
@@ -117,7 +284,118 @@ class App extends Component<{}, AppState> {
     }
   }
 
-  // Join a new game
+  // Create a new game from lobby
+  async createGame() {
+    try {
+      this.setState({ loading: true, error: null });
+      const response = await fetch(`${API_BASE_URL}/games/create`, {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({ playerName: this.state.playerName })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        this.setState({
+          gameId: data.game_id,
+          participantId: data.participant_id,
+          balance: data.starting_balance,
+          inGame: true,
+          inLobby: false,
+          loading: false
+        });
+
+        // Start updating game state
+        this.intervalId = setInterval(() => {
+          this.fetchGameState();
+        }, 2000);
+
+        await this.fetchGameState();
+      } else {
+        this.setState({
+          error: data.error || 'Failed to create game',
+          loading: false
+        });
+      }
+    } catch (error) {
+      this.setState({
+        error: 'Network error: Unable to create game',
+        loading: false
+      });
+      console.error('Error creating game:', error);
+    }
+  }
+
+  // Join an existing game from lobby
+  async joinExistingGame(gameId: number) {
+    try {
+      this.setState({ loading: true, error: null });
+      const response = await fetch(`${API_BASE_URL}/games/${gameId}/join`, {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({ playerName: this.state.playerName })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        this.setState({
+          gameId: data.game_id,
+          participantId: data.participant_id,
+          balance: data.starting_balance,
+          inGame: true,
+          inLobby: false,
+          loading: false
+        });
+
+        // Start updating game state
+        this.intervalId = setInterval(() => {
+          this.fetchGameState();
+        }, 2000);
+
+        await this.fetchGameState();
+      } else {
+        this.setState({
+          error: data.error || 'Failed to join game',
+          loading: false
+        });
+      }
+    } catch (error) {
+      this.setState({
+        error: 'Network error: Unable to join game',
+        loading: false
+      });
+      console.error('Error joining game:', error);
+    }
+  }
+
+  // Start a game (transition from waiting to active)
+  async startGame() {
+    if (!this.state.gameId) return;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/games/${this.state.gameId}/start`, {
+        method: 'POST',
+        headers: this.getAuthHeaders()
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Game started, price updates will begin
+        console.log('Game started!');
+      } else {
+        this.setState({
+          error: data.error || 'Failed to start game'
+        });
+      }
+    } catch (error) {
+      console.error('Error starting game:', error);
+    }
+  }
+
+  // Join a new game (legacy - creates a new game)
   async joinGame() {
     try {
       this.setState({ loading: true, error: null });
@@ -126,9 +404,9 @@ class App extends Component<{}, AppState> {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ playerName: 'Player' })
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
         this.setState({
           gameId: data.game_id,
@@ -280,7 +558,7 @@ class App extends Component<{}, AppState> {
     try {
       const response = await fetch(`${API_BASE_URL}/transactions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.getAuthHeaders(),
         body: JSON.stringify({
           gameId: this.state.gameId,
           participantId: this.state.participantId,
@@ -331,7 +609,7 @@ class App extends Component<{}, AppState> {
     try {
       const response = await fetch(`${API_BASE_URL}/transactions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.getAuthHeaders(),
         body: JSON.stringify({
           gameId: this.state.gameId,
           participantId: this.state.participantId,
@@ -373,9 +651,43 @@ class App extends Component<{}, AppState> {
   }
 
   render() {
-    const { stocks, portfolio, balance, loading, error, lastUpdate, currentVolley, gameStatus, inGame } = this.state;
+    const { stocks, portfolio, balance, loading, error, lastUpdate, currentVolley, gameStatus, inGame, inLogin } = this.state;
     const portfolioValue = this.getPortfolioValue();
     const totalValue = balance + portfolioValue;
+
+    // Show login screen if not logged in
+    if (inLogin) {
+      return (
+        <div className="app">
+          <header className="app-header">
+            <h1>Stock Trading Game</h1>
+            <div className="login-container">
+              <h2>Welcome to STG</h2>
+              <input type="text" placeholder="Username" className="login-input" />
+              <input type="password" placeholder="Password" className="login-input" />
+              <button
+                className="login-btn"
+                onClick={() => this.login()}
+              >
+                Login
+              </button>
+              <button
+                className="login-btn"
+                onClick={() => this.register()}
+              >
+                Register
+              </button>
+              <button
+                className="small-btn"
+                onClick={() => this.playGuest()}
+              >
+                Play as Guest
+              </button>
+            </div>
+          </header>
+        </div>
+      );
+    }
 
     if (loading) {
       return (
@@ -396,195 +708,55 @@ class App extends Component<{}, AppState> {
       );
     }
 
-    // Show join game screen if not in a game
-    if (!inGame) {
+    // Show main menu screen if not in a game
+    if (!inGame && !this.state.inLobby) {
       return (
-        <div className="app">
-          <header className="app-header">
-            <h1>Stock Trading Game</h1>
-            <div className="join-game-container">
-              <h2>Ready to start trading?</h2>
-              <p>Join a new game to start buying and selling stocks in real-time!</p>
-              <button
-                className="join-game-btn"
-                onClick={() => this.joinGame()}
-              >
-                Join New Game
-              </button>
-            </div>
-          </header>
-        </div>
+        <MainMenu
+          onBrowseGames={() => this.goToLobby()}
+          onLogout={() => this.logout()}
+          playerName={this.state.playerName}
+        />
+      );
+    }
+
+    // Show lobby with available games
+    if (!inGame && this.state.inLobby) {
+      return (
+        <Lobby
+          availableGames={this.state.availableGames}
+          onCreateGame={() => this.createGame()}
+          onJoinGame={(gameId) => this.joinExistingGame(gameId)}
+        />
       );
     }
 
     // Show game results screen if game is completed
     if (gameStatus === 'completed' && this.state.gameResults) {
-      const results = this.state.gameResults;
-      const playerResult = results.find(r => r.participant_id === this.state.participantId);
-
       return (
-        <div className="app">
-          <header className="app-header">
-            <h1>Stock Trading Game</h1>
-          </header>
-
-          <div className="results-container">
-            <div className="results-title">
-              <h2>{playerResult && playerResult.rank === 1 ? '🎉 You Won! 🎉' : 'Game Over'}</h2>
-              <p>Final Standings</p>
-            </div>
-
-            <div className="leaderboard">
-              <table className="results-table">
-                <thead>
-                  <tr>
-                    <th>Rank</th>
-                    <th>Player</th>
-                    <th>Cash</th>
-                    <th>Portfolio</th>
-                    <th>Total Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {results.map((result, index) => (
-                    <tr key={result.participant_id} className={result.participant_id === this.state.participantId ? 'current-player' : ''}>
-                      <td className="rank-cell">{result.rank}</td>
-                      <td className="player-name-cell">{result.player_name}</td>
-                      <td>${result.cash_remaining.toFixed(2)}</td>
-                      <td>${result.portfolio_value.toFixed(2)}</td>
-                      <td className="total-value-cell"><strong>${result.total_value.toFixed(2)}</strong></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="results-actions">
-              <button
-                className="join-game-btn"
-                onClick={() => {
-                  this.setState({ inGame: false, gameResults: null, gameId: null, participantId: null });
-                }}
-              >
-                Play Again
-              </button>
-            </div>
-          </div>
-
-          <footer className="app-footer">
-            <p>Real-time stock trading simulation</p>
-          </footer>
-        </div>
+        <ResultsScreen
+          results={this.state.gameResults}
+          currentParticipantId={this.state.participantId}
+          onPlayAgain={() => {
+            this.setState({ inGame: false, gameResults: null, gameId: null, participantId: null });
+          }}
+        />
       );
     }
 
     return (
-      <div className="app">
-        <header className="app-header">
-          <h1>Stock Trading Game</h1>
-          <div className="player-info">
-            <div className="balance-info">
-              <p><strong>Cash:</strong> ${balance.toFixed(2)}</p>
-              <p><strong>Portfolio:</strong> ${portfolioValue.toFixed(2)}</p>
-              <p><strong>Total Value:</strong> ${totalValue.toFixed(2)}</p>
-            </div>
-            <div className="update-info">
-              {lastUpdate && <p><small>Last updated: {lastUpdate}</small></p>}
-              {currentVolley > 0 && <p><small>Volley: {currentVolley}/300 ({gameStatus})</small></p>}
-            </div>
-          </div>
-          
-          {currentVolley > 0 && (
-            <div className="progress-container">
-              <div className="progress-bar">
-                <div 
-                  className="progress-fill" 
-                  style={{ width: `${Math.min((currentVolley / 300) * 100, 100)}%` }}
-                ></div>
-              </div>
-              <div className="progress-text">
-                <span>{Math.floor(currentVolley * 2 / 60)}:{((currentVolley * 2) % 60).toString().padStart(2, '0')} elapsed</span>
-                <span>{Math.floor((300 - currentVolley) * 2 / 60)}:{(((300 - currentVolley) * 2) % 60).toString().padStart(2, '0')} remaining</span>
-              </div>
-            </div>
-          )}
-        </header>
-
-        <div className="stocks-grid">
-          {stocks.map((stock) => {
-            const currentPrice = parseFloat(stock.current_price || stock.initial_price);
-            const holding = portfolio[stock.ticker] || 0;
-            const canBuy = balance >= currentPrice;
-            const canSell = holding > 0;
-
-            // Get notifications for this stock
-            const stockNotifications = this.state.notifications.filter(n => n.ticker === stock.ticker);
-
-            return (
-              <div key={stock.ticker} className="stock-card">
-                {/* Notifications for this stock */}
-                <div className="stock-notifications">
-                  {stockNotifications.map((notification) => {
-                    // Show the net effect of player action (opposite of player_impact)
-                    const playerEffect = -notification.impact;
-                    const isBuy = notification.transactionType === 'buy';
-                    return (
-                      <div key={notification.id} className="floating-notification-inline">
-                        <span className={`notification-impact-inline ${isBuy ? 'positive' : 'negative'}`}>
-                          {isBuy ? '📈 +' : '📉 '}
-                          ${Math.abs(playerEffect).toFixed(2)}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="stock-header">
-                  <div className="stock-title">
-                    <h3>{stock.ticker}</h3>
-                    <h4>{stock.company_name}</h4>
-                  </div>
-                  <div className="stock-holdings">
-                    <p>Holdings: {holding} shares</p>
-                    <p>Value: ${(holding * currentPrice).toFixed(2)}</p>
-                  </div>
-                </div>
-
-                <div className="stock-center">
-                  <StockChart ticker={stock.ticker} gameId={this.state.gameId} />
-                </div>
-
-                <div className="stock-bottom">
-                  <div className="stock-price">
-                    <h2>${currentPrice.toFixed(2)}</h2>
-                  </div>
-
-                  <div className="stock-actions">
-                    <button
-                      className="buy-btn"
-                      disabled={!canBuy}
-                      onClick={() => this.buyStock(stock.ticker, currentPrice)}
-                    >
-                      Buy
-                    </button>
-                    <button
-                      className="sell-btn"
-                      disabled={!canSell}
-                      onClick={() => this.sellStock(stock.ticker, currentPrice)}
-                    >
-                      Sell
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <footer className="app-footer">
-          <p>Real-time stock trading simulation</p>
-        </footer>
-      </div>
+      <GameScreen
+        stocks={stocks}
+        portfolio={portfolio}
+        balance={balance}
+        lastUpdate={lastUpdate}
+        currentVolley={currentVolley}
+        gameStatus={gameStatus}
+        gameId={this.state.gameId}
+        notifications={this.state.notifications}
+        onBuy={(ticker, price) => this.buyStock(ticker, price)}
+        onSell={(ticker, price) => this.sellStock(ticker, price)}
+        onStartGame={() => this.startGame()}
+      />
     );
   }
 }
