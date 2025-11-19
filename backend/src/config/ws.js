@@ -52,6 +52,7 @@ wss.on("connection", async (ws, req) => {
     // ws.user is set during upgrade (see wssController)
     game.addPlayer(ws, ws.user);
 
+    ws.on("start", () => { game.start(); });
     ws.on("message", (msg) => game.handleMessage(ws, msg));
     ws.on("close", () => game.removePlayer(ws));
 });

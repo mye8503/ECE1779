@@ -71,6 +71,8 @@ async function updateGameVolley(game_id, current_volley, changes = {}) {
             "INSERT INTO gamestockprices (game_id, stock_id, cur_price, cur_volley, hist_price) VALUES ($1, $2, $3, $4, $5)",
             [game_id, stock_id, new_price_val, current_volley, last_price]
         );
+
+        return new_price_val;
     };
 
     // update current_volley in games table
@@ -101,11 +103,51 @@ async function getUserById(user_id) {
     return result.rows[0];
 }
 
+
+// **correct**
+/**
+ * gets game stock prices for a given volley
+ * @param {number} volley - The volley number to retrieve stock prices for.
+ * @returns {JSON} - the stock id and prices for the given volley.
+ */
+async function getGameStocks(volley = 0) {
+    const result = await pool.query(
+        "SELECT stock_id, price FROM gamestockprices WHERE volley=$1",
+        [volley]
+    );
+    return result.rows;
+}
+
+// **correct**
+/**
+ * gets reference stock prices 
+ * @returns {JSON} - the stock id, ticker, company name, initial price, and historical data.
+ */
+async function getStocksReference() {
+    const result = await pool.query(
+        "SELECT ticker, company_name, initial_price, historical_data FROM stocks",
+    );
+    return result.rows;
+}
+
+async function updateTradeHistory(game_id, participant_id, stock_id, volley, transaction_type, quantity, price_per_share, total_value, create_time) {
+    // insert new trade history row
+    await pool.query(
+        `INSERT INTO tradehistory 
+        (game_id, participant_id, stock_id, volley, transaction_type, quantity, price_per_share, total_value, created_at) 
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [game_id, participant_id, stock_id, volley, transaction_type, quantity, price_per_share, total_value, create_time]
+    );
+}
+
 export {
     createGame,
     getGameById,
     finishGame,
     updateGameVolley,
     createUser,
-    getUserById
+    getUserById,
+    getGameStocks,
+    updateTradeHistory,
+    getStocksReference,
 };
