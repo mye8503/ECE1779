@@ -18,14 +18,21 @@ spec:
         imagePullPolicy: Never
         ports:
         - containerPort: 3000
-        # env:
-        # - name: DATABASE_URL
-        #   valueFrom:
-        #     secretKeyRef:
-        #       name: db-credentials
-        #       key: database_url
-        # - name: PORT
-        #   value: "3000"
+        env:
+        - name: DB_HOST
+          value: "postgres"
+        - name: DB_PORT
+          value: "5432"
+        - name: DB_USER
+          value: "game_user"
+        - name: DB_PASSWORD
+          value: "game_password"
+        - name: DB_NAME
+          value: "stock_game"
+        - name: REDIS_URL
+          value: "redis://redis:6379"
+        - name: PORT
+          value: "3000"
         # resources:
         #   requests:
         #     memory: "256Mi"
