@@ -1,23 +1,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: backend-deployment
+  name: frontend-deployment
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: backend
+      app: frontend
   template:
     metadata:
       labels:
-        app: backend
+        app: frontend
     spec:
       containers:
-      - name: backend
-        image: myregistry/backend:latest
+      - name: frontend
+        image: myregistry/frontend:latest
         imagePullPolicy: Never
         ports:
-        - containerPort: 3000
+        - containerPort: 5173
         # env:
         # - name: DATABASE_URL
         #   valueFrom:
