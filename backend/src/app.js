@@ -46,7 +46,7 @@ app.get("/api/health", (req, res) => {
 // Get all users
 app.get("/api/users", async (req, res) => {
   try {
-    const result = await pool.query('SELECT user_id, username, password created_at FROM users ORDER BY user_id');
+    const result = await pool.query('SELECT user_id, username, created_at FROM users ORDER BY user_id');
     res.json({
       success: true,
       users: result.rows
@@ -91,7 +91,7 @@ app.post("/api/login", async (req, res) => {
 
     const result = await pool.query(
       'SELECT user_id, username FROM users WHERE username = $1 AND password_hash = $2',
-      [username, pass_hash]
+      [username, password] //pass_hash]
     );
     if (result.rows.length === 0) {
       return res.status(401).json({
@@ -133,7 +133,7 @@ app.post("/api/register", async (req, res) => {
     if (result.rows.length === 0) {
       const insertResult = await pool.query(
         'INSERT INTO users (username, password_hash) VALUES ($1, $2) RETURNING user_id, username',
-        [username, pass_hash]
+        [username, password]//pass_hash]
       );
       return res.json({
         success: true,
@@ -176,6 +176,25 @@ app.post("/api/guests/register", async (req, res) => {
     });
   }
 });
+
+// Handle guest removal
+app.delete("/api/guests/remove/:guestId", async (req, res) => {
+  try {
+    const { guestId } = req.params;
+    const result = await pool.query(`DELETE FROM guests WHERE guest_id = $1`, [guestId]);
+    res.json({
+      success: true,
+      message: `Guest ${guestId} removed`
+    });
+  }
+  catch (error) {
+    console.error('Error during guest removal:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Guest removal failed'
+    });
+  }
+})
 
 // Get all available stocks
 app.get("/api/stocks", async (req, res) => {

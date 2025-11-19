@@ -187,6 +187,32 @@ class App extends Component<{}, AppState> {
     }
   }
 
+  async logout() {
+    if (this.state.isGuest) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/guests/remove/${this.state.playerId}`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ guestId: this.state.playerId })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          console.log("Guest removed successfully");
+          this.setState({ inLogin: true, playerId: null, playerName: '', inGame: false});
+        } else {
+          console.error("Failed to remove guest:", data.error);
+        }
+      }
+      catch (error) {
+        console.error('Error during guest removal:', error);
+      }
+    }
+    else {
+     this.setState({ inLogin: true, playerId: null, playerName: '', inGame: false, isGuest: true}); 
+    }
+  }
+
   // Join a new game
   async joinGame() {
     console.log("Joining new game as", this.state.isGuest ? 'Guest' : 'User', this.state.playerId);
@@ -262,6 +288,8 @@ class App extends Component<{}, AppState> {
             currentVolley: data.game.current_volley || 0,
             gameStatus: data.game.status || ''
           });
+
+          console.log(this.state.currentVolley);
         }
       }
     } catch (error) {
@@ -424,7 +452,7 @@ class App extends Component<{}, AppState> {
               <p>Playing as: {playerName}</p>
               <button
                 className="small-btn"
-                onClick={() => this.setState({ inLogin: true, playerId: null, playerName: '', isGuest: true })}
+                onClick={() => this.logout()}
               >
                 Logout
               </button>
