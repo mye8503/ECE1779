@@ -82,10 +82,14 @@ interface AppState {
   token: string | null;
   gameParticipants: Player[];
   showPlayersModal: boolean;
+  wsConnected: boolean;
 }
 
 class App extends Component<{}, AppState> {
   private intervalId?: NodeJS.Timeout;
+  private ws?: WebSocket;
+  private wsReconnectTimeout?: NodeJS.Timeout;
+  private guestRegistrationInProgress = false;
 
   constructor(props: any) {
     super(props);
@@ -113,7 +117,8 @@ class App extends Component<{}, AppState> {
       isGuest: true,
       token: null,
       gameParticipants: [],
-      showPlayersModal: false
+      showPlayersModal: false,
+      wsConnected: false
     };
   }
 
@@ -205,14 +210,21 @@ class App extends Component<{}, AppState> {
 
   async playGuest() {
     try {
+      // Prevent duplicate guest registration calls
+      if (this.guestRegistrationInProgress) {
+        console.log('[GUEST] Guest registration already in progress, skipping duplicate call');
+        return;
+      }
+
+      this.guestRegistrationInProgress = true;
+
+      // Always create a fresh guest session (guests are temporary/anonymous)
       const response = await fetch(`${API_BASE_URL}/guests/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
       const data = await response.json();
       if (data.success) {
-        // Store token in localStorage
-        localStorage.setItem('token', data.token);
         this.setState({
           inLogin: false,
           isGuest: true,
@@ -226,6 +238,9 @@ class App extends Component<{}, AppState> {
       console.error('Error during guest registration:', error);
       alert('Network error: Unable to register guest');
     }
+    finally {
+      this.guestRegistrationInProgress = false;
+    }
   }
 
   async goToLobby() {
@@ -234,7 +249,7 @@ class App extends Component<{}, AppState> {
   }
 
   logout() {
-    // Clear token from localStorage
+    // Clear tokens from localStorage
     localStorage.removeItem('token');
     // Reset to login screen
     this.setState({
@@ -268,6 +283,10 @@ class App extends Component<{}, AppState> {
     if (this.intervalId) {
       clearInterval(this.intervalId);
     }
+    if (this.wsReconnectTimeout) {
+      clearTimeout(this.wsReconnectTimeout);
+    }
+    this.disconnectWebSocket();
   }
 
   // Fetch all available stocks from backend
@@ -317,6 +336,9 @@ class App extends Component<{}, AppState> {
           inGame: true,
           inLobby: false,
           loading: false
+        }, () => {
+          // Connect WebSocket after game state is set
+          this.connectWebSocket();
         });
 
         // Start updating game state
@@ -362,6 +384,9 @@ class App extends Component<{}, AppState> {
           inGame: true,
           inLobby: false,
           loading: false
+        }, () => {
+          // Connect WebSocket after game state is set
+          this.connectWebSocket();
         });
 
         // Start updating game state
@@ -464,24 +489,36 @@ class App extends Component<{}, AppState> {
       const data = await response.json();
 
       if (data.success) {
-        // Update stocks with current prices from the game
-        const pricesResponse = await fetch(`${API_BASE_URL}/stocks/prices?gameId=${this.state.gameId}`);
-        const pricesData = await pricesResponse.json();
+        // During active gameplay, stock prices come from WebSocket ticks, not REST API
+        // Only fetch prices for completed games or when not actively trading
+        let updatedStocks = this.state.stocks;
 
-        if (pricesData.success) {
-          const updatedStocks = this.state.stocks.map(stock => {
-            const priceData = pricesData.prices.find((p: any) => p.ticker === stock.ticker);
-            return {
-              ...stock,
-              current_price: priceData ? parseFloat(priceData.current_price) : stock.initial_price
-            };
-          });
+        if (this.state.gameStatus !== 'active') {
+          // For non-active games, fetch current prices from the API
+          const pricesResponse = await fetch(`${API_BASE_URL}/stocks/prices?gameId=${this.state.gameId}`);
+          const pricesData = await pricesResponse.json();
 
-          // Detect player impact changes and create notifications
-          const newNotifications: Notification[] = [];
-          const newPreviousImpacts = { ...this.state.previousPlayerImpacts };
+          if (pricesData.success) {
+            updatedStocks = this.state.stocks.map(stock => {
+              const priceData = pricesData.prices.find((p: any) => p.ticker === stock.ticker);
+              return {
+                ...stock,
+                current_price: priceData ? parseFloat(priceData.current_price) : stock.initial_price
+              };
+            });
+          }
+        } else {
+          // During active game, keep the stocks as-is (WebSocket will update them via handlePriceUpdate)
+          updatedStocks = this.state.stocks;
+        }
 
-          pricesData.prices.forEach((priceData: any) => {
+        // Detect player impact changes and create notifications
+        const newNotifications: Notification[] = [];
+        const newPreviousImpacts = { ...this.state.previousPlayerImpacts };
+
+        // During active games, prices array is empty, so no impact notifications
+        const pricesArray = this.state.gameStatus === 'active' ? [] : [];
+        pricesArray.forEach((priceData: any) => {
             const currentImpact = parseFloat(priceData.player_impact) || 0;
             const previousImpact = this.state.previousPlayerImpacts[priceData.ticker] || 0;
 
@@ -510,47 +547,33 @@ class App extends Component<{}, AppState> {
             }
 
             newPreviousImpacts[priceData.ticker] = currentImpact;
-          });
+        });
 
-          const newGameStatus = data.game.status || '';
+        const newGameStatus = data.game.status || '';
 
-          // If game is completed, fetch results
-          if (newGameStatus === 'completed' && !this.state.gameResults) {
-            try {
-              const resultsResponse = await fetch(`${API_BASE_URL}/games/${this.state.gameId}/results`);
-              const resultsData = await resultsResponse.json();
+        // If game is completed, fetch results
+        if (newGameStatus === 'completed' && !this.state.gameResults) {
+          try {
+            const resultsResponse = await fetch(`${API_BASE_URL}/games/${this.state.gameId}/results`);
+            const resultsData = await resultsResponse.json();
 
-              if (resultsData.success) {
-                this.setState({
-                  stocks: updatedStocks,
-                  portfolio: data.portfolio,
-                  balance: data.balance,
-                  lastUpdate: new Date().toLocaleTimeString(),
-                  currentVolley: data.game.current_volley || 0,
-                  gameStatus: newGameStatus,
-                  notifications: [...this.state.notifications, ...newNotifications],
-                  previousPlayerImpacts: newPreviousImpacts,
-                  gameResults: resultsData.participants
-                });
-              }
-            } catch (error) {
-              console.error('Error fetching game results:', error);
+            if (resultsData.success) {
               this.setState({
                 stocks: updatedStocks,
-                portfolio: data.portfolio,
-                balance: data.balance,
+                // During game, portfolio/balance come from WebSocket, not REST API
                 lastUpdate: new Date().toLocaleTimeString(),
                 currentVolley: data.game.current_volley || 0,
                 gameStatus: newGameStatus,
                 notifications: [...this.state.notifications, ...newNotifications],
-                previousPlayerImpacts: newPreviousImpacts
+                previousPlayerImpacts: newPreviousImpacts,
+                gameResults: resultsData.participants
               });
             }
-          } else {
+          } catch (error) {
+            console.error('Error fetching game results:', error);
             this.setState({
               stocks: updatedStocks,
-              portfolio: data.portfolio,
-              balance: data.balance,
+              // During game, portfolio/balance come from WebSocket, not REST API
               lastUpdate: new Date().toLocaleTimeString(),
               currentVolley: data.game.current_volley || 0,
               gameStatus: newGameStatus,
@@ -558,6 +581,16 @@ class App extends Component<{}, AppState> {
               previousPlayerImpacts: newPreviousImpacts
             });
           }
+        } else {
+          this.setState({
+            stocks: updatedStocks,
+            // During game, portfolio/balance come from WebSocket, not REST API
+            lastUpdate: new Date().toLocaleTimeString(),
+            currentVolley: data.game.current_volley || 0,
+            gameStatus: newGameStatus,
+            notifications: [...this.state.notifications, ...newNotifications],
+            previousPlayerImpacts: newPreviousImpacts
+          });
         }
       }
     } catch (error) {
@@ -581,52 +614,206 @@ class App extends Component<{}, AppState> {
     }
   }
 
-  // Buy stock via API
+  // WebSocket connection methods
+  connectWebSocket() {
+    if (!this.state.gameId || !this.state.token) {
+      console.log('Cannot connect WebSocket: missing gameId or token');
+      return;
+    }
+
+    // Check if WebSocket exists and is in a valid state (OPEN or CONNECTING)
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+      console.log('WebSocket already connected or connecting, skipping duplicate connection');
+      return;
+    }
+
+    // Close any stale connections before opening a new one
+    if (this.ws && this.ws.readyState !== WebSocket.CLOSED && this.ws.readyState !== WebSocket.CLOSING) {
+      console.log('Closing stale WebSocket connection');
+      this.ws.close();
+    }
+
+    try {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.hostname}:3000/ws?gameId=${this.state.gameId}&token=${this.state.token}`;
+
+      console.log('Connecting to WebSocket:', wsUrl);
+      const ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        console.log('WebSocket connected');
+        this.setState({ wsConnected: true });
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          console.log('Received WebSocket message:', data);
+
+          switch (data.type) {
+            case 'tick':
+              // Price update broadcast
+              this.handlePriceUpdate(data);
+              break;
+            case 'game_start':
+              this.handleGameStart();
+              break;
+            case 'game_end':
+              this.handleGameEnd();
+              break;
+            case 'transaction':
+              // Transaction confirmation - update player balance and portfolio
+              console.log('Transaction confirmed:', data);
+              if (data.newBalance !== undefined && data.newHoldings !== undefined) {
+                const updatedPortfolio = { ...this.state.portfolio };
+                updatedPortfolio[data.ticker] = data.newHoldings;
+
+                this.setState({
+                  balance: data.newBalance,
+                  portfolio: updatedPortfolio
+                });
+
+                console.log(`✓ Balance updated: $${data.newBalance.toFixed(2)}, Holdings: ${data.ticker}=${data.newHoldings}`);
+              }
+              break;
+            case 'player_transaction':
+              // Broadcast of other players' transactions
+              console.log(`Player transaction: ${data.player} ${data.action}ed ${data.volume} shares of ${data.ticker}`);
+              break;
+            case 'error':
+              this.setState({ error: data.message || 'Server error' });
+              break;
+            default:
+              console.warn('Unknown message type:', data.type);
+          }
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        this.setState({ wsConnected: false });
+        this.setState({ error: 'WebSocket connection error' });
+      };
+
+      ws.onclose = () => {
+        console.log('WebSocket disconnected');
+        this.setState({ wsConnected: false });
+
+        // Attempt to reconnect after 3 seconds
+        if (this.state.inGame) {
+          this.wsReconnectTimeout = setTimeout(() => {
+            console.log('Attempting to reconnect WebSocket...');
+            this.connectWebSocket();
+          }, 3000);
+        }
+      };
+
+      this.ws = ws;
+    } catch (error) {
+      console.error('Error creating WebSocket:', error);
+      this.setState({ wsConnected: false });
+      this.setState({ error: 'Failed to create WebSocket connection' });
+    }
+  }
+
+  disconnectWebSocket() {
+    if (this.ws) {
+      this.ws.close();
+      this.ws = undefined;
+    }
+    this.setState({ wsConnected: false });
+  }
+
+  sendWebSocketMessage(message: any) {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(message));
+    } else {
+      console.warn('WebSocket not connected, cannot send message:', message);
+      this.setState({ error: 'WebSocket not connected' });
+    }
+  }
+
+  handlePriceUpdate(data: any) {
+    if (!data.stock_updates || !Array.isArray(data.stock_updates)) {
+      console.warn('Invalid price update data');
+      return;
+    }
+
+    // Update stock prices from the broadcast
+    const updatedStocks = this.state.stocks.map(stock => {
+      const update = data.stock_updates.find((u: any) => u.ticker === stock.ticker);
+      if (update) {
+        return {
+          ...stock,
+          current_price: update.cur_price.toString()
+        };
+      }
+      return stock;
+    });
+
+    // Update current volley
+    this.setState({
+      stocks: updatedStocks,
+      currentVolley: data.tick || this.state.currentVolley,
+      lastUpdate: new Date().toLocaleTimeString()
+    });
+  }
+
+  handleGameStart() {
+    console.log('Game started via WebSocket');
+    this.setState({ gameStatus: 'active' });
+  }
+
+  async handleGameEnd() {
+    console.log('Game ended via WebSocket');
+    this.setState({ gameStatus: 'completed' });
+
+    // Fetch game results
+    if (this.state.gameId) {
+      try {
+        const resultsResponse = await fetch(`${API_BASE_URL}/games/${this.state.gameId}/results`);
+        const resultsData = await resultsResponse.json();
+
+        if (resultsData.success) {
+          console.log('Game results fetched:', resultsData.participants);
+          this.setState({ gameResults: resultsData.participants });
+        }
+      } catch (error) {
+        console.error('Error fetching game results:', error);
+      }
+    }
+  }
+
+  // Buy stock via WebSocket
   async buyStock(ticker: string, price: number) {
     if (!this.state.inGame || !this.state.gameId || !this.state.participantId) {
       alert('Please join a game first');
       return;
     }
 
+    if (!this.state.wsConnected) {
+      alert('WebSocket not connected. Please wait for connection...');
+      return;
+    }
+
     try {
-      const response = await fetch(`${API_BASE_URL}/transactions`, {
-        method: 'POST',
-        headers: this.getAuthHeaders(),
-        body: JSON.stringify({
-          gameId: this.state.gameId,
-          participantId: this.state.participantId,
-          ticker,
-          transactionType: 'buy',
-          quantity: 1
-        })
+      // Send buy request via WebSocket
+      this.sendWebSocketMessage({
+        action: 'buy',
+        ticker: ticker,
+        volume: 1
       });
 
-      const data = await response.json();
-
-      if (!data.success) {
-        alert(data.error || 'Failed to buy stock');
-      } else {
-        // Record this transaction for the NEXT volley (when the impact will show)
-        const nextVolley = this.state.currentVolley + 1;
-        const key = `${ticker}_${nextVolley}`;
-        console.log(`[BUY] Recording transaction: ${key} = buy. Current volley: ${this.state.currentVolley}`);
-        this.setState(prevState => ({
-          playerTransactions: {
-            ...prevState.playerTransactions,
-            [key]: 'buy'
-          }
-        }), () => {
-          console.log(`[BUY] playerTransactions after setState:`, this.state.playerTransactions);
-        });
-      }
-      // Portfolio will update on next fetchGameState call
+      console.log(`[BUY] Sent buy request for ${ticker}`);
     } catch (error) {
       console.error('Error buying stock:', error);
-      alert('Network error: Failed to buy stock');
+      alert('Failed to send buy request');
     }
   }
 
-  // Sell stock via API
+  // Sell stock via WebSocket
   async sellStock(ticker: string, price: number) {
     if (!this.state.inGame || !this.state.gameId || !this.state.participantId) {
       alert('Please join a game first');
@@ -639,38 +826,23 @@ class App extends Component<{}, AppState> {
       return;
     }
 
+    if (!this.state.wsConnected) {
+      alert('WebSocket not connected. Please wait for connection...');
+      return;
+    }
+
     try {
-      const response = await fetch(`${API_BASE_URL}/transactions`, {
-        method: 'POST',
-        headers: this.getAuthHeaders(),
-        body: JSON.stringify({
-          gameId: this.state.gameId,
-          participantId: this.state.participantId,
-          ticker,
-          transactionType: 'sell',
-          quantity: 1
-        })
+      // Send sell request via WebSocket
+      this.sendWebSocketMessage({
+        action: 'sell',
+        ticker: ticker,
+        volume: 1
       });
 
-      const data = await response.json();
-
-      if (!data.success) {
-        alert(data.error || 'Failed to sell stock');
-      } else {
-        // Record this transaction for the NEXT volley (when the impact will show)
-        const nextVolley = this.state.currentVolley + 1;
-        const key = `${ticker}_${nextVolley}`;
-        this.setState(prevState => ({
-          playerTransactions: {
-            ...prevState.playerTransactions,
-            [key]: 'sell'
-          }
-        }));
-      }
-      // Portfolio will update on next fetchGameState call
+      console.log(`[SELL] Sent sell request for ${ticker}`);
     } catch (error) {
       console.error('Error selling stock:', error);
-      alert('Network error: Failed to sell stock');
+      alert('Failed to send sell request');
     }
   }
 

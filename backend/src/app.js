@@ -5,13 +5,14 @@ import path from "path";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { authMiddleware } from "./middleware/auth.js";
+import { WebSocketServer } from "ws";
+import { Game } from "./models/game.js";
+import { updateGameStatus } from "./db/db.js";
 
 const app = express();
 
-// JWT secret from environment or default
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key';
 
-// Database connection
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
   port: process.env.DB_PORT || 5432,
@@ -20,7 +21,6 @@ const pool = new Pool({
   database: process.env.DB_NAME || 'stock_game',
 });
 
-// Test database connection
 pool.connect((err, client, release) => {
   if (err) {
     console.error('Error connecting to database:', err.stack);
@@ -30,10 +30,8 @@ pool.connect((err, client, release) => {
   }
 });
 
-// Middleware to parse JSON request bodies
 app.use(express.json());
 
-// Enable CORS for frontend
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
@@ -41,12 +39,10 @@ app.use((req, res, next) => {
   next();
 });
 
-// API routes
 app.get("/api/health", (req, res) => {
   res.json({ status: "Backend API is running", timestamp: new Date().toISOString() });
 });
 
-// Get all users
 app.get("/api/users", async (req, res) => {
   try {
     const result = await pool.query('SELECT user_id, username, created_at FROM users ORDER BY user_id');
@@ -64,7 +60,6 @@ app.get("/api/users", async (req, res) => {
   }
 });
 
-// Get all guests
 app.get("/api/guests", async (req, res) => {
   try {
     const result = await pool.query('SELECT guest_id, session_token, created_at FROM guests ORDER BY guest_id');
@@ -82,13 +77,11 @@ app.get("/api/guests", async (req, res) => {
   }
 });
 
-// Handle user login
 app.post("/api/login", async (req, res) => {
   try {
     const { username, password } = req.body;
     console.log(`[LOGIN] Attempt - Username: ${username}`);
 
-    // Fetch user from database
     const result = await pool.query(
       'SELECT user_id, username, password_hash FROM users WHERE username = $1',
       [username]
@@ -104,7 +97,6 @@ app.post("/api/login", async (req, res) => {
 
     const user = result.rows[0];
 
-    // Compare password with hashed password
     const passwordMatch = await bcrypt.compare(password, user.password_hash);
 
     if (!passwordMatch) {
@@ -115,7 +107,6 @@ app.post("/api/login", async (req, res) => {
       });
     }
 
-    // Generate JWT token
     const token = jwt.sign(
       { user_id: user.user_id, username: user.username },
       JWT_SECRET,
@@ -139,12 +130,10 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
-// Handle user registration
 app.post("/api/register", async (req, res) => {
   try {
     const { username, password, email } = req.body;
 
-    // Validate input
     if (!username || !password) {
       return res.status(400).json({
         success: false,
@@ -159,10 +148,8 @@ app.post("/api/register", async (req, res) => {
       });
     }
 
-    // Use email if provided, otherwise generate a placeholder
     const userEmail = email || `${username}@stock-game.local`;
 
-    // Check if user already exists
     const checkResult = await pool.query(
       'SELECT user_id FROM users WHERE username = $1 OR email = $2',
       [username, userEmail]
@@ -175,10 +162,8 @@ app.post("/api/register", async (req, res) => {
       });
     }
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Insert new user
     const insertResult = await pool.query(
       'INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING user_id, username, email',
       [username, userEmail, hashedPassword]
@@ -198,7 +183,6 @@ app.post("/api/register", async (req, res) => {
   }
 });
 
-// Handle guest registration
 app.post("/api/guests/register", async (req, res) => {
   try {
     console.log(`[GUEST_LOGIN] Attempt - Creating guest session`);
@@ -211,7 +195,6 @@ app.post("/api/guests/register", async (req, res) => {
 
     const guest_id = insertResult.rows[0].guest_id;
 
-    // Generate JWT token for guest
     const token = jwt.sign(
       { guest_id: guest_id, username: `Guest_${guest_id}` },
       JWT_SECRET,
@@ -234,7 +217,6 @@ app.post("/api/guests/register", async (req, res) => {
   }
 });
 
-// Get all available stocks
 app.get("/api/stocks", async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM stocks ORDER BY ticker');
@@ -251,7 +233,6 @@ app.get("/api/stocks", async (req, res) => {
   }
 });
 
-// Get current stock prices for a specific game
 app.get("/api/stocks/prices", async (req, res) => {
   try {
     const { gameId } = req.query;
@@ -263,7 +244,6 @@ app.get("/api/stocks/prices", async (req, res) => {
       });
     }
     
-    // Get current game info
     const gameResult = await pool.query(`
       SELECT game_id, current_volley, status 
       FROM games 
@@ -279,7 +259,6 @@ app.get("/api/stocks/prices", async (req, res) => {
     
     const currentGame = gameResult.rows[0];
     
-    // Get prices from the specified game or use initial prices
     const result = await pool.query(`
       SELECT
         s.stock_id,
@@ -324,7 +303,6 @@ app.get("/api/stocks/prices", async (req, res) => {
   }
 });
 
-// Get specific stock by ticker
 app.get("/api/stocks/:ticker", async (req, res) => {
   try {
     const { ticker } = req.params;
@@ -350,8 +328,6 @@ app.get("/api/stocks/:ticker", async (req, res) => {
   }
 });
 
-// Create and join a new game (single player for now)
-// Get all available games (waiting status)
 app.get("/api/games/available", async (req, res) => {
   try {
     const result = await pool.query(`
@@ -381,13 +357,11 @@ app.get("/api/games/available", async (req, res) => {
   }
 });
 
-// Create a new game (for lobby)
 app.post("/api/games/create", authMiddleware, async (req, res) => {
   try {
     const { playerName = 'Player' } = req.body;
-    const user = req.user; // From JWT token
+    const user = req.user;
 
-    // Create new game in waiting status
     const gameResult = await pool.query(`
       INSERT INTO games (status, current_volley, max_volleys, created_at)
       VALUES ('waiting', 0, 10, CURRENT_TIMESTAMP)
@@ -405,20 +379,18 @@ app.post("/api/games/create", authMiddleware, async (req, res) => {
         VALUES ($1, $2, 1000.00)
         RETURNING participant_id
       `, [gameId, user.user_id]);
-    } else {
-      // Guest user - add as guest
-      const guestResult = await pool.query(`
-        INSERT INTO guests (session_token, expires_at)
-        VALUES ($1, $2)
-        RETURNING guest_id
-      `, [`guest_${Date.now()}_${Math.random()}`, new Date(Date.now() + 24*60*60*1000)]);
-      const guestId = guestResult.rows[0].guest_id;
-
+    } else if (user.guest_id) {
+      // Guest user - use existing guest_id from token, don't create a new one
       participantResult = await pool.query(`
         INSERT INTO gameparticipants (game_id, guest_id, starting_balance)
         VALUES ($1, $2, 1000.00)
         RETURNING participant_id
-      `, [gameId, guestId]);
+      `, [gameId, user.guest_id]);
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: 'No user_id or guest_id in token'
+      });
     }
     const participantId = participantResult.rows[0].participant_id;
 
@@ -450,7 +422,7 @@ app.post("/api/games/create", authMiddleware, async (req, res) => {
 // Join an existing game
 app.post("/api/games/:gameId/join", authMiddleware, async (req, res) => {
   try {
-    const { gameId } = req.params;
+    const gameId = parseInt(req.params.gameId);
     const { playerName = 'Player' } = req.body;
     const user = req.user; // From JWT token
 
@@ -477,20 +449,18 @@ app.post("/api/games/:gameId/join", authMiddleware, async (req, res) => {
         VALUES ($1, $2, 1000.00)
         RETURNING participant_id
       `, [gameId, user.user_id]);
-    } else {
-      // Guest user - add as guest
-      const guestResult = await pool.query(`
-        INSERT INTO guests (session_token, expires_at)
-        VALUES ($1, $2)
-        RETURNING guest_id
-      `, [`guest_${Date.now()}_${Math.random()}`, new Date(Date.now() + 24*60*60*1000)]);
-      const guestId = guestResult.rows[0].guest_id;
-
+    } else if (user.guest_id) {
+      // Guest user - use existing guest_id from token, don't create a new one
       participantResult = await pool.query(`
         INSERT INTO gameparticipants (game_id, guest_id, starting_balance)
         VALUES ($1, $2, 1000.00)
         RETURNING participant_id
-      `, [gameId, guestId]);
+      `, [gameId, user.guest_id]);
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: 'No user_id or guest_id in token'
+      });
     }
     const participantId = participantResult.rows[0].participant_id;
 
@@ -513,7 +483,7 @@ app.post("/api/games/:gameId/join", authMiddleware, async (req, res) => {
 // Start a game (transition from waiting to active)
 app.post("/api/games/:gameId/start", authMiddleware, async (req, res) => {
   try {
-    const { gameId } = req.params;
+    const gameId = parseInt(req.params.gameId);
 
     // Update game status to active and set start time
     const result = await pool.query(`
@@ -525,6 +495,12 @@ app.post("/api/games/:gameId/start", authMiddleware, async (req, res) => {
 
     if (result.rows.length === 0) {
       return res.status(400).json({ success: false, error: 'Game not found or already started' });
+    }
+
+    // Start the game instance if it exists
+    const game = activeGames.get(gameId);
+    if (game) {
+      game.start();
     }
 
     // Start price updates for this game
@@ -610,7 +586,7 @@ app.post("/api/games/join", async (req, res) => {
 // Get all participants in a game with their current stats
 app.get("/api/games/:gameId/participants", async (req, res) => {
   try {
-    const { gameId } = req.params;
+    const gameId = parseInt(req.params.gameId);
 
     const participantsResult = await pool.query(`
       SELECT
@@ -762,7 +738,7 @@ app.get("/api/games/:gameId/state/:participantId", async (req, res) => {
 // Get game results - all participants and their final portfolio values
 app.get("/api/games/:gameId/results", async (req, res) => {
   try {
-    const { gameId } = req.params;
+    const gameId = parseInt(req.params.gameId);
 
     // Get game info
     const gameResult = await pool.query(`
@@ -806,7 +782,7 @@ app.get("/api/games/:gameId/results", async (req, res) => {
           WHERE t.participant_id = $1 AND t.game_id = $2
           GROUP BY s.ticker, s.stock_id
           HAVING SUM(CASE WHEN t.transaction_type = 'buy' THEN t.quantity ELSE -t.quantity END) > 0
-        `, [participant.participant_id, gameId]);
+        `, [participant.participant_id, gameId]).catch(() => ({ rows: [] }));
 
         // Get cash remaining
         const cashResult = await pool.query(`
@@ -864,6 +840,46 @@ app.get("/api/games/:gameId/results", async (req, res) => {
       rank: index + 1
     }));
 
+    // Update game results in database (winner and end_time)
+    const winner = resultsWithRanks[0];
+    const winnerUserId = winner.user_id || null;
+
+    const gameUpdateResult = await pool.query(`
+      UPDATE games
+      SET winner_user_id = $1, end_time = CURRENT_TIMESTAMP
+      WHERE game_id = $2 AND end_time IS NULL
+      RETURNING game_id
+    `, [winnerUserId, gameId]);
+
+    // Only update user stats if this is the first time results are being fetched (end_time was NULL)
+    if (gameUpdateResult.rows.length > 0) {
+      // Update user stats for all players
+      for (const result of resultsWithRanks) {
+        if (result.user_id) {
+          const profit = result.total_value - result.starting_balance;
+          const isWinner = result.rank === 1 ? 1 : 0;
+
+          await pool.query(`
+            UPDATE users
+            SET games_played = games_played + 1,
+                games_won = games_won + $1,
+                total_profit = total_profit + $2,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = $3
+          `, [isWinner, profit, result.user_id]);
+        }
+      }
+
+      // Update participant final values
+      for (const result of resultsWithRanks) {
+        await pool.query(`
+          UPDATE gameparticipants
+          SET final_portfolio_value = $1, rank = $2
+          WHERE participant_id = $3
+        `, [result.portfolio_value, result.rank, result.participant_id]);
+      }
+    }
+
     res.json({
       success: true,
       game: {
@@ -872,7 +888,8 @@ app.get("/api/games/:gameId/results", async (req, res) => {
         current_volley: game.current_volley,
         max_volleys: game.max_volleys,
         start_time: game.start_time,
-        end_time: game.end_time
+        end_time: game.end_time,
+        winner_user_id: winnerUserId
       },
       participants: resultsWithRanks
     });
@@ -1076,11 +1093,34 @@ const activeGameIntervals = new Map(); // gameId -> intervalId
 // Start price updates for a specific game
 function startGamePriceUpdates(gameId) {
   console.log(`Starting price updates for game ${gameId}`);
-  
+  console.log(`Active games: ${Array.from(activeGames.keys()).join(', ')}`);
+
+  // Get the game instance with a small retry in case it's not registered yet
+  let game = activeGames.get(gameId);
+  if (!game) {
+    // Try again after a short delay (WebSocket connection might still be registering the game)
+    setTimeout(() => {
+      game = activeGames.get(gameId);
+      console.log(`Retry: checking for game ${gameId}, found:`, !!game);
+      if (!game) {
+        console.warn(`Game ${gameId} still not found in active games after retry`);
+        console.log(`Active games now: ${Array.from(activeGames.keys()).join(', ')}`);
+        return;
+      }
+      startGameTickInterval(gameId, game);
+    }, 200);
+    return;
+  }
+
+  startGameTickInterval(gameId, game);
+}
+
+function startGameTickInterval(gameId, game) {
   const intervalId = setInterval(async () => {
-    await updateGamePrices(gameId);
+    // Use the Game instance's tick method for real-time WebSocket updates
+    await game.tick();
   }, 2000);
-  
+
   activeGameIntervals.set(gameId, intervalId);
 }
 
@@ -1224,9 +1264,12 @@ async function cleanupStaleGames() {
   }
 }
 
+// Active games map
+const activeGames = new Map();
+
 // Start the server
 const port = process.env.PORT || 3000;
-app.listen(port, async () => {
+const server = app.listen(port, async () => {
   console.log(`Server running on port ${port}`);
 
   // Run cleanup on startup
@@ -1235,4 +1278,101 @@ app.listen(port, async () => {
   console.log('Game server ready - waiting for players to join games');
 });
 
-export { app };
+// Setup WebSocket server
+const wss = new WebSocketServer({ server });
+
+wss.on('connection', async (ws, req) => {
+  try {
+    // Parse query parameters for gameId and token
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const gameId = parseInt(url.searchParams.get('gameId') || '0');
+    const token = url.searchParams.get('token');
+
+    console.log(`WebSocket connection attempt - gameId: ${gameId}, token: ${token ? 'provided' : 'missing'}`);
+
+    // Validate gameId and token
+    if (!gameId || !token) {
+      console.warn('Invalid WebSocket connection: missing gameId or token');
+      ws.close(4000, 'Missing gameId or token');
+      return;
+    }
+
+    // Verify JWT token
+    let user;
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET);
+      user = {
+        id: decoded.user_id,
+        guest_id: decoded.guest_id,
+        username: decoded.username
+      };
+    } catch (err) {
+      console.warn('Invalid JWT token:', err.message);
+      ws.close(4001, 'Invalid token');
+      return;
+    }
+
+    // Get or create game instance
+    let game = activeGames.get(gameId);
+    if (!game) {
+      // Check if game is already completed in database
+      const gameStatus = await pool.query(`SELECT status FROM games WHERE game_id = $1`, [gameId]);
+      if (gameStatus.rows.length === 0) {
+        ws.close(4002, 'Game not found');
+        return;
+      }
+      if (gameStatus.rows[0].status === 'completed') {
+        ws.close(4003, 'Game is already completed');
+        return;
+      }
+
+      console.log(`Creating new Game instance for game ${gameId}`);
+      game = new Game(gameId);
+      activeGames.set(gameId, game);
+    }
+
+    // Add player to game
+    await game.addPlayer(ws, user);
+    console.log(`Player ${user.username} (${user.id}) joined game ${gameId}`);
+
+    // Handle incoming messages from this player
+    ws.on('message', async (rawMsg) => {
+      try {
+        await game.handleMessage(ws, rawMsg.toString());
+      } catch (err) {
+        console.error('Error handling message:', err);
+        ws.send(JSON.stringify({ type: 'error', message: 'Server error processing message' }));
+      }
+    });
+
+    // Handle player disconnect
+    ws.on('close', async () => {
+      try {
+        await game.removePlayer(ws);
+        console.log(`Player ${user.username} left game ${gameId}`);
+
+        // If no players left, remove game and update status in DB
+        if (game.players.size === 0) {
+          activeGames.delete(gameId);
+          // Mark game as completed in database (no longer joinable)
+          await updateGameStatus(gameId, 'completed');
+          console.log(`Game ${gameId} closed (no players remaining)`);
+        }
+      } catch (err) {
+        console.error('Error handling player disconnect:', err);
+      }
+    });
+
+    ws.on('error', (err) => {
+      console.error('WebSocket error:', err);
+    });
+
+  } catch (err) {
+    console.error('Error in WebSocket connection handler:', err);
+    ws.close(4500, 'Internal server error');
+  }
+});
+
+console.log('WebSocket server initialized on the same port as HTTP server');
+
+export { app, activeGames };

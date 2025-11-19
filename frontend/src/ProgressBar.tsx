@@ -9,9 +9,10 @@ const ProgressBar: React.FC<ProgressBarProps> = ({ currentVolley }) => {
     return null;
   }
 
-  const progressPercentage = Math.min((currentVolley / 300) * 100, 100);
+  const MAX_VOLLEYS = 90;  // 3 minutes = 90 volleys
+  const progressPercentage = Math.min((currentVolley / MAX_VOLLEYS) * 100, 100);
   const elapsedSeconds = currentVolley * 2;
-  const remainingSeconds = (300 - currentVolley) * 2;
+  const remainingSeconds = (MAX_VOLLEYS - currentVolley) * 2;
 
   const formatTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60);

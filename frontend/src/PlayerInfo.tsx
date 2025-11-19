@@ -26,7 +26,7 @@ const PlayerInfo: React.FC<PlayerInfoProps> = ({
       </div>
       <div className="update-info">
         {lastUpdate && <p><small>Last updated: {lastUpdate}</small></p>}
-        {currentVolley > 0 && <p><small>Volley: {currentVolley}/300 ({gameStatus})</small></p>}
+        {currentVolley > 0 && <p><small>Volley: {currentVolley}/90 ({gameStatus})</small></p>}
       </div>
     </div>
   );
