@@ -607,6 +607,91 @@ app.post("/api/games/join", async (req, res) => {
   }
 });
 
+// Get all participants in a game with their current stats
+app.get("/api/games/:gameId/participants", async (req, res) => {
+  try {
+    const { gameId } = req.params;
+
+    const participantsResult = await pool.query(`
+      SELECT
+        gp.participant_id,
+        gp.user_id,
+        gp.guest_id,
+        gp.starting_balance,
+        COALESCE(u.username, CONCAT('Guest ', g.guest_id)) as player_name
+      FROM gameparticipants gp
+      LEFT JOIN users u ON gp.user_id = u.user_id
+      LEFT JOIN guests g ON gp.guest_id = g.guest_id
+      WHERE gp.game_id = $1
+      ORDER BY gp.participant_id
+    `, [gameId]);
+
+    // For each participant, calculate their current balance and portfolio value
+    const participantsWithStats = await Promise.all(
+      participantsResult.rows.map(async (participant) => {
+        // Get cash remaining
+        const cashResult = await pool.query(`
+          SELECT SUM(CASE WHEN transaction_type = 'buy' THEN -total_value ELSE total_value END) as net_cash_change
+          FROM transactions
+          WHERE participant_id = $1 AND game_id = $2
+        `, [participant.participant_id, gameId]);
+
+        const startingBalance = parseFloat(participant.starting_balance);
+        const netCashChange = parseFloat(cashResult.rows[0]?.net_cash_change || 0);
+        const currentBalance = startingBalance + netCashChange;
+
+        // Get current stock holdings and calculate portfolio value
+        const portfolioResult = await pool.query(`
+          SELECT
+            s.stock_id,
+            SUM(CASE WHEN t.transaction_type = 'buy' THEN t.quantity ELSE -t.quantity END) as quantity
+          FROM transactions t
+          JOIN stocks s ON t.stock_id = s.stock_id
+          WHERE t.participant_id = $1 AND t.game_id = $2
+          GROUP BY s.stock_id
+          HAVING SUM(CASE WHEN t.transaction_type = 'buy' THEN t.quantity ELSE -t.quantity END) > 0
+        `, [participant.participant_id, gameId]);
+
+        // Calculate portfolio value
+        let portfolioValue = 0;
+        for (const holding of portfolioResult.rows) {
+          const priceResult = await pool.query(`
+            SELECT price FROM gamestockprices
+            WHERE game_id = $1 AND stock_id = $2
+            ORDER BY volley DESC
+            LIMIT 1
+          `, [gameId, holding.stock_id]);
+
+          const currentPrice = parseFloat(priceResult.rows[0]?.price || 0);
+          portfolioValue += currentPrice * holding.quantity;
+        }
+
+        const totalValue = currentBalance + portfolioValue;
+
+        return {
+          participant_id: participant.participant_id,
+          player_name: participant.player_name,
+          starting_balance: startingBalance,
+          current_balance: currentBalance,
+          portfolio_value: portfolioValue,
+          total_value: totalValue
+        };
+      })
+    );
+
+    res.json({
+      success: true,
+      participants: participantsWithStats
+    });
+  } catch (error) {
+    console.error('Error fetching participants:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch participants'
+    });
+  }
+});
+
 // Get current game state for a participant
 app.get("/api/games/:gameId/state/:participantId", async (req, res) => {
   try {
@@ -698,9 +783,11 @@ app.get("/api/games/:gameId/results", async (req, res) => {
         gp.guest_id,
         gp.user_id,
         gp.starting_balance,
-        g.session_token as guest_name
+        g.session_token as guest_name,
+        u.username as user_name
       FROM gameparticipants gp
       LEFT JOIN guests g ON gp.guest_id = g.guest_id
+      LEFT JOIN users u ON gp.user_id = u.user_id
       WHERE gp.game_id = $1
       ORDER BY gp.participant_id
     `, [gameId]);
@@ -749,11 +836,19 @@ app.get("/api/games/:gameId/results", async (req, res) => {
 
         const totalValue = cashRemaining + portfolioValue;
 
+        // Determine player name - prefer user name, fall back to guest
+        let playerName = 'Unknown';
+        if (participant.user_name) {
+          playerName = participant.user_name;
+        } else if (participant.guest_name) {
+          playerName = `Guest ${participant.guest_id}`;
+        }
+
         return {
           participant_id: participant.participant_id,
           guest_id: participant.guest_id,
           user_id: participant.user_id,
-          player_name: participant.guest_name ? `Guest ${participant.guest_id}` : 'Unknown',
+          player_name: playerName,
           starting_balance: startingBalance,
           cash_remaining: cashRemaining,
           portfolio_value: portfolioValue,

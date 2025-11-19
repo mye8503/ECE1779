@@ -48,6 +48,15 @@ interface AvailableGame {
   max_players: number;
 }
 
+interface Player {
+  participant_id: number;
+  player_name: string;
+  starting_balance: number;
+  current_balance: number;
+  portfolio_value: number;
+  total_value: number;
+}
+
 interface AppState {
   stocks: Stock[];
   portfolio: Portfolio;
@@ -71,6 +80,8 @@ interface AppState {
   playerName: string;
   isGuest: boolean;
   token: string | null;
+  gameParticipants: Player[];
+  showPlayersModal: boolean;
 }
 
 class App extends Component<{}, AppState> {
@@ -100,7 +111,9 @@ class App extends Component<{}, AppState> {
       playerId: null,
       playerName: '',
       isGuest: true,
-      token: null
+      token: null,
+      gameParticipants: [],
+      showPlayersModal: false
     };
   }
 
@@ -309,9 +322,11 @@ class App extends Component<{}, AppState> {
         // Start updating game state
         this.intervalId = setInterval(() => {
           this.fetchGameState();
+          this.fetchParticipants();
         }, 2000);
 
         await this.fetchGameState();
+        await this.fetchParticipants();
       } else {
         this.setState({
           error: data.error || 'Failed to create game',
@@ -352,9 +367,11 @@ class App extends Component<{}, AppState> {
         // Start updating game state
         this.intervalId = setInterval(() => {
           this.fetchGameState();
+          this.fetchParticipants();
         }, 2000);
 
         await this.fetchGameState();
+        await this.fetchParticipants();
       } else {
         this.setState({
           error: data.error || 'Failed to join game',
@@ -545,6 +562,22 @@ class App extends Component<{}, AppState> {
       }
     } catch (error) {
       console.error('Error fetching game state:', error);
+    }
+  }
+
+  // Fetch all participants in the current game
+  async fetchParticipants() {
+    if (!this.state.gameId) return;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/games/${this.state.gameId}/participants`);
+      const data = await response.json();
+
+      if (data.success) {
+        this.setState({ gameParticipants: data.participants });
+      }
+    } catch (error) {
+      console.error('Error fetching participants:', error);
     }
   }
 
@@ -753,6 +786,12 @@ class App extends Component<{}, AppState> {
         gameStatus={gameStatus}
         gameId={this.state.gameId}
         notifications={this.state.notifications}
+        players={this.state.gameParticipants}
+        currentParticipantId={this.state.participantId}
+        showPlayersModal={this.state.showPlayersModal}
+        onTogglePlayersModal={() =>
+          this.setState({ showPlayersModal: !this.state.showPlayersModal })
+        }
         onBuy={(ticker, price) => this.buyStock(ticker, price)}
         onSell={(ticker, price) => this.sellStock(ticker, price)}
         onStartGame={() => this.startGame()}

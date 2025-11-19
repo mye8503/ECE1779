@@ -2,6 +2,7 @@ import React from 'react';
 import PlayerInfo from './PlayerInfo';
 import ProgressBar from './ProgressBar';
 import StockCard from './StockCard';
+import PlayersBoard from './PlayersBoard';
 
 interface Stock {
   stock_id: number;
@@ -22,6 +23,15 @@ interface Notification {
   transactionType: 'buy' | 'sell';
 }
 
+interface Player {
+  participant_id: number;
+  player_name: string;
+  starting_balance: number;
+  current_balance: number;
+  portfolio_value: number;
+  total_value: number;
+}
+
 interface GameScreenProps {
   stocks: Stock[];
   portfolio: Portfolio;
@@ -31,6 +41,10 @@ interface GameScreenProps {
   gameStatus: string;
   gameId: number | null;
   notifications: Notification[];
+  players?: Player[];
+  currentParticipantId?: number | null;
+  showPlayersModal?: boolean;
+  onTogglePlayersModal?: () => void;
   onBuy: (ticker: string, price: number) => void;
   onSell: (ticker: string, price: number) => void;
   onStartGame?: () => void;
@@ -45,6 +59,10 @@ const GameScreen: React.FC<GameScreenProps> = ({
   gameStatus,
   gameId,
   notifications,
+  players = [],
+  currentParticipantId,
+  showPlayersModal = false,
+  onTogglePlayersModal,
   onBuy,
   onSell,
   onStartGame
@@ -67,15 +85,37 @@ const GameScreen: React.FC<GameScreenProps> = ({
           currentVolley={currentVolley}
           gameStatus={gameStatus}
         />
-        {gameStatus === 'waiting' && onStartGame && (
-          <div className="start-game-container">
+        <div className="game-actions">
+          <button
+            className="players-btn"
+            onClick={onTogglePlayersModal}
+            title="View players in game"
+          >
+            👥 Players ({players.length})
+          </button>
+          {gameStatus === 'waiting' && onStartGame && (
             <button className="start-game-btn" onClick={onStartGame}>
               Start Game
             </button>
-          </div>
-        )}
+          )}
+        </div>
         <ProgressBar currentVolley={currentVolley} />
       </header>
+
+      {showPlayersModal && (
+        <div className="modal-overlay" onClick={onTogglePlayersModal}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <button className="modal-close" onClick={onTogglePlayersModal}>
+              ✕
+            </button>
+            <PlayersBoard
+              players={players}
+              currentParticipantId={currentParticipantId || null}
+              gameStatus={gameStatus}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="stocks-grid">
         {stocks.map((stock) => {
