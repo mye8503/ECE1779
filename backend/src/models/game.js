@@ -1,31 +1,35 @@
-import {pool} from "../config/sql.js"
+// import {pool} from "../config/sql.js"
 import { WebSocket } from 'ws';
 import { 
-    updateGameVolley,
-    getGameStocks,
     getStocksReference,
 } from "../db/db.js";
-
+import { priceUpdate } from "../utils/priceUpdate.js";
+// **correct**
+/**
+ * gets game stock prices for a given volley
+ * @param {number} volley - The volley number to retrieve stock prices for.
+ * @returns {JSON} - the stock id and prices for the given volley.
+ */
 class Game {
-    constructor(id, tickInterval = 2000, current_volley = 0, players_data = []) {
+    constructor(id, tickInterval = 2000, current_volley = 0, players_data = {}) {
         this.id = id;
         this.players = new Set(); // websocket connections
         this.tickInterval = tickInterval;
         this.current_volley = current_volley;
         this.players_data = players_data;
-        this.tick_count = 0;
         this.started = false;
         this.buys = []; // tracks buys within this volley
         this.sells = []; // tracks sells within this volley
         this.timer = setInterval(() => this.tick(), this.tickInterval);
         this.max_volleys = 300; 
+        this.max_players = 2;
 
         // get the stocks and assign them to a map
         this.stocks = new Map();
         const result = getStocksReference();
         let pos = 0;
         for (const row of result.rows) {
-            this.stocks.set(row.ticker, { cur_price: row.stock_value, hist_price: row.stock_value, pos: pos });
+            this.stocks.set(row.ticker, { cur_price: row.initial_price, historical_price: row.historical_data, pos: pos });
             pos++;
             this.buys.push(0);
             this.sells.push(0);
@@ -36,23 +40,39 @@ class Game {
         if (this.started === false) {
             return;
         }
-        this.tick_count++;
-        this.current_volley++;
 
         // TO-DO:
         // do math for the next volley based on current result
-        const stock_updates = [];
+        const stock_updates = {};
         // retrieve stock price updates
+        for (const [ticker, stock] of this.stocks) {
+            // simple price update logic: price changes based on buys/sells, referencing historical price (of volley+1)
+            const new_price = await priceUpdate(
+                stock.cur_price,
+                this.buys[stock.pos],
+                this.sells[stock.pos],
+                stock.historical_price[this.current_volley+1]
+            );
+            // update stock price
+            stock.cur_price = new_price;
+            // reset buys/sells for next volley
+            this.buys[stock.pos] = 0;
+            this.sells[stock.pos] = 0;
+            stock_updates[ticker] = new_price;
+        }
 
-        this.broadcast({ type: "tick", tick: this.tick_count, stock_updates});
+        // increment volley count and broadcast updates
+        this.current_volley++;
+        this.broadcast({ type: "tick", tick: this.current_volley, stock_updates});
 
         // TO-DO:
         // sync DB
-        updateGameVolley(this.id, this.current_volley, stock_updates);
+        // updateGameVolley(this.id, this.current_volley, stock_updates);
 
         // if tick count exceeds limit, end game
-        if (this.tick_count >= this.max_volleys) {
+        if (this.current_volley >= this.max_volleys) {
             this.started = false;
+            this.forceSellAllPlayers();
             this.broadcast({ type: "game_end", message: "The game has ended!" });
             this.stop();
         }
@@ -76,6 +96,12 @@ class Game {
     addPlayer(ws, user) {
         ws.user = user;
         this.players.add(ws);
+        this.players_data[user.id] = { cash: 1000, holdings: {} };
+
+        // auto-start when max players reached
+        if (this.players.size === this.max_players) {
+            this.start();
+        }
 
         // TO-DO:
         // update DB to add the new player
@@ -83,7 +109,11 @@ class Game {
 
     start() {
         this.started = true;
-        this.broadcast({ type: "game_start", message: "The game has started!" });
+        const initialData = {};
+        for (const [ticker, stock] of this.stocks) {
+            initialData[ticker] = stock.cur_price;
+        }
+        this.broadcast({ type: "game_start", message: initialData });
     }
 
     removePlayer(ws) {
@@ -91,6 +121,25 @@ class Game {
 
         // TO-DO:
         // update DB to remove the old player
+    }
+
+    forceSellAllPlayers() {
+        for (const client of this.players) {
+            // TO-DO:
+            // deduct from each player's holdings and credit cash based on current stock prices
+            // update the player by sending a message
+            const userId = client.user.id;
+            for (const [ticker, stock] of this.stocks) {
+                const volume = this.players_data[userId].holdings[ticker] || 0;
+                if (volume > 0) {
+                    const price = stock.cur_price * volume;
+                    this.players_data[userId].cash += price;
+                    this.players_data[userId].holdings[ticker] = 0;
+                    // forces client to sell message
+                    client.send(JSON.stringify({ type: 'force_sell', ticker: ticker, volume: volume, price: price }));
+                }
+            }
+        }
     }
 
     handleMessage(ws, rawMsg) {
@@ -114,6 +163,8 @@ class Game {
                 const stock = this.stocks.get(msg.ticker);
                 this.buys[stock.pos] += msg.volume;
                 const price = -stock.cur_price * msg.volume;
+                this.players_data[userId].cash += price;
+                this.players_data[userId].holdings[msg.ticker] = (this.players_data[userId].holdings[msg.ticker] || 0) + msg.volume;
                 ws.send(JSON.stringify({ type: 'transaction', ticker: msg.ticker, volume: msg.volume, price: price }));
 
                 break;
@@ -122,6 +173,8 @@ class Game {
                 const stock = this.stocks.get(msg.ticker);
                 this.sells[stock.pos] += msg.volume;
                 const price = stock.cur_price * msg.volume;
+                this.players_data[userId].cash += price;
+                this.players_data[userId].holdings[msg.ticker] = (this.players_data[userId].holdings[msg.ticker] || 0) - msg.volume;
                 ws.send(JSON.stringify({ type: 'transaction', ticker: msg.ticker, volume: msg.volume, price: price }));
                 break;
             }
