@@ -15,7 +15,6 @@ const wsConnect = async (server) => {
                 return;
             }
 
-            // user auth
             const decoded = authMiddleware(token);
             if (!decoded) {
                 socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
@@ -23,7 +22,6 @@ const wsConnect = async (server) => {
                 return;
             }
 
-            // double check with db
             const result = await pool.query(
                 `SELECT * FROM games
                 WHERE game_id = $1 AND status = 'active'
@@ -47,6 +45,5 @@ const wsConnect = async (server) => {
         }
     });
 }
-
 
 export {wsConnect};
