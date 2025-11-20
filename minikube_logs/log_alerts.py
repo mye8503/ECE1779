@@ -59,7 +59,7 @@ def main():
     print(f"Checked last {len(lines)} lines of {LOG_FILE}")
     error_lines = [
         l for l in lines
-        if "ERROR" in l or " 500 " in l or "InternalServerError" in l or "Sell" in l
+        if "ERROR" in l or " 500 " in l or "InternalServerError" in l or "Sell" in l or "100m" in l or "500Mi" in l
     ]
 
     if len(error_lines) >= ERROR_THRESHOLD:

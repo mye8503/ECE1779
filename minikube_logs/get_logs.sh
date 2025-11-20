@@ -12,3 +12,6 @@ kubectl logs -n "$NAMESPACE" \
   --all-containers=true \
   --since=10s \
   --timestamps >> "$LOG_FILE"
+
+kubectl top pod -n "$NAMESPACE" \
+  -l "$SELECTOR" >> "$LOG_FILE"
