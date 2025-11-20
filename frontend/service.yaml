@@ -8,5 +8,5 @@ spec:
     app: frontend
   ports:
     - protocol: TCP
-      port: 5173
+      port: 5180
       targetPort: 5173
