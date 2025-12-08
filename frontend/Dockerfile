@@ -1,18 +1,16 @@
-FROM node:22
-
+# Stage 1: Build
+FROM node:18 AS builder
 WORKDIR /app
 
-# Copy package files
 COPY package*.json ./
-
-# Install dependencies
 RUN npm install
 
-# Copy source code
 COPY . .
+RUN npm run build   # creates dist/
 
-# Expose Vite dev server port
-EXPOSE 5173
+# Stage 2: Production Image
+FROM nginx:alpine
+COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Start Vite dev server with host binding for Docker
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
