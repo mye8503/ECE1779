@@ -220,7 +220,7 @@ const StockChart: React.FC<StockChartProps> = ({
               <text
                 x={paddingX - 6}
                 y={y + 3}
-                fontSize={7}
+                fontSize={5}
                 fill="#aaa"
                 textAnchor="end"
               >
