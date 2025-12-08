@@ -1,4 +1,4 @@
-import React, { Component } from 'react';
+import { Component } from 'react';
 import './App.css';
 import MainMenu from './MainMenu';
 import Lobby from './Lobby';
@@ -526,7 +526,7 @@ class App extends Component<{}, AppState> {
             // If impact changed, create a notification
             if (currentImpact !== previousImpact && currentImpact !== 0) {
               // Check if we recorded this transaction
-              const transactionKey = `${priceData.ticker}_${pricesData.current_volley}`;
+              const transactionKey = `${priceData.ticker}_${priceData.current_volley}`;
               const recordedType = this.state.playerTransactions[transactionKey];
 
               // Use recorded type if available, otherwise use API type, fallback to inferring

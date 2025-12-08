@@ -6,6 +6,6 @@
 # Dependencies
 node_modules/
 
-# Build outputs
-dist/
-build/
+# Build outputs - commented out so we can commit dist for deployment
+# dist/
+# build/
