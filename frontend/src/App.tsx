@@ -5,8 +5,9 @@ import Lobby from './Lobby';
 import GameScreen from './GameScreen';
 import ResultsScreen from './ResultsScreen';
 
-// API configuration - dynamically detect host
-const API_BASE_URL = `http://${window.location.hostname}:3000/api`;
+// API configuration - use environment variable in production, fallback to localhost for development
+const API_BASE_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3000/api`;
+const WS_BASE_URL = import.meta.env.VITE_WS_URL || `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:3000`;
 
 // Type definitions
 interface Stock {
@@ -634,8 +635,7 @@ class App extends Component<{}, AppState> {
     }
 
     try {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.hostname}:3000/ws?gameId=${this.state.gameId}&token=${this.state.token}`;
+      const wsUrl = `${WS_BASE_URL}/ws?gameId=${this.state.gameId}&token=${this.state.token}`;
 
       console.log('Connecting to WebSocket:', wsUrl);
       const ws = new WebSocket(wsUrl);

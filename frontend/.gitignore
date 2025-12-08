@@ -1,0 +1,11 @@
+# Environment files - these contain secrets
+.env
+.env.local
+.env.production
+
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
