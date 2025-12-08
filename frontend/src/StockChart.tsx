@@ -18,7 +18,7 @@ const StockChart: React.FC<StockChartProps> = ({ ticker, gameId }) => {
   const [chartData, setChartData] = useState<PriceData[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const API_BASE_URL = `http://${window.location.hostname}:3000/api`;
+  const API_BASE_URL = window.location.port ? `http://${window.location.hostname}:3000/api` : `http://${window.location.hostname}/api`;
 
   useEffect(() => {
     const fetchChartData = async () => {
