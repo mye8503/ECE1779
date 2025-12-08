@@ -60,8 +60,8 @@ else
     cd ECE1779
 fi
 
-# Checkout working branch
-git checkout working-database
+# Checkout deployment branch
+git checkout digital_ocean
 
 # Create .env file
 echo "🔐 Creating environment file..."
