@@ -13,7 +13,7 @@ import request from "request";
 const app = express();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key';
-const STOCK_API_KEY = process.env.STOCK_API_KEY || 'FSV25QOXMQFVA1VN';
+const STOCK_API_KEY = process.env.STOCK_API_KEY || 'MWLMTX64JSIY4D33';
 
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
