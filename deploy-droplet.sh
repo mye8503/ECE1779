@@ -63,6 +63,16 @@ fi
 # Checkout deployment branch
 git checkout digital_ocean
 
+# Verify files exist
+echo "📋 Checking deployment files..."
+if [ ! -f "docker-compose.prod.yml" ]; then
+    echo "❌ Error: docker-compose.prod.yml not found!"
+    echo "Current directory: $(pwd)"
+    echo "Files in directory:"
+    ls -la
+    exit 1
+fi
+
 # Create .env file
 echo "🔐 Creating environment file..."
 cat > .env << 'EOF'
