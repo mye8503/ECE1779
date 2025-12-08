@@ -1,3 +1,5 @@
+import pool from "../config/sql.js";
+
 /**
  * Calculate new stock price based on:
  * 1. Player trading impact (buy/sell volume)
@@ -10,7 +12,7 @@
  * @param {number} hist_price - Previous volley price (for trend calculation)
  * @returns {number} New price after all factors applied
  */
-async function priceUpdate(old_price, buy_volume, sell_volume, hist_price) {
+async function priceUpdate(old_price, buy_volume, sell_volume, hist_price, current_volley, ticker) {
     // 1. TRADING IMPACT: Net buying pressure affects price
     // More aggressive scaling: high volume creates bigger price swings
     const net_volume = buy_volume - sell_volume;
@@ -27,7 +29,29 @@ async function priceUpdate(old_price, buy_volume, sell_volume, hist_price) {
 
     // Combine all factors
     const total_change = trade_impact + volatility_magnitude + mean_reversion;
-    const new_price = old_price + total_change;
+
+    const historical_data = await pool.query(
+    'SELECT historical_prices FROM stocks WHERE ticker = $1',
+    [ticker]
+    );
+
+    const prices = historical_data.rows[0].historical_prices;
+
+    // current_volley goes from 1..90 so convert to 0-based index:
+    const index = current_volley - 1;
+
+    // Safety check
+    if (!prices[index]) {
+    throw new Error(`No historical price for volley ${current_volley}`);
+    }
+
+    const his_price = prices[index];
+
+    // Use open price as reference unless undefined
+    const ref_price =
+    his_price.open !== undefined ? his_price.open : old_price;
+
+    const new_price = ref_price + total_change;
 
     // Price floor at $0.01 to prevent negative prices
     return Math.max(new_price, 0.01);

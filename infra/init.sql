@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS stocks (
     ticker VARCHAR(10) UNIQUE NOT NULL,
     company_name VARCHAR(255) NOT NULL,
     initial_price DECIMAL(10,2) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    historical_prices JSONB DEFAULT '[]'::JSONB
 );
 
 

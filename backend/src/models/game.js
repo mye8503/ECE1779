@@ -91,7 +91,9 @@ class Game {
                 stock.cur_price,
                 this.buys[pos],
                 this.sells[pos],
-                stock.hist_price
+                stock.hist_price,
+                this.current_volley,
+                ticker
             );
 
             stock.hist_price = stock.cur_price;

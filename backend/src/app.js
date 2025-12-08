@@ -8,10 +8,12 @@ import { authMiddleware } from "./middleware/auth.js";
 import { WebSocketServer } from "ws";
 import { Game } from "./models/game.js";
 import { updateGameStatus } from "./db/db.js";
+import request from "request";
 
 const app = express();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key';
+const STOCK_API_KEY = process.env.STOCK_API_KEY || 'MWLMTX64JSIY4D33';
 
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
@@ -31,6 +33,116 @@ pool.connect((err, client, release) => {
 });
 
 app.use(express.json());
+
+function fetchTimeSeries(ticker) {
+  const url =
+    `https://www.alphavantage.co/query` +
+    `?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(ticker)}` +
+    `&apikey=${STOCK_API_KEY}`;
+
+  return new Promise((resolve, reject) => {
+    request.get(
+      {
+        url,
+        json: true,
+        headers: { 'User-Agent': 'request' },
+      },
+      (err, res, data) => {
+        if (err) {
+          console.error(`HTTP error for ${ticker}:`, err);
+          return reject(err);
+        }
+
+        if (res.statusCode !== 200) {
+          console.error(`Status ${res.statusCode} for ${ticker}:`, data);
+          return reject(new Error(`HTTP ${res.statusCode}`));
+        }
+
+        const timeSeries = data['Time Series (Daily)'];
+
+        if (!timeSeries) {
+          // This will show rate-limit messages / errors from Alpha Vantage
+          console.error(`No "Time Series (Daily)" for ${ticker}:`, data);
+          return resolve(null); // resolve null so caller can `continue`
+        }
+
+        resolve(timeSeries);
+      }
+    );
+  });
+}
+
+async function updateHistoricalPrices() {
+  try {
+    // 1. Get all tickers already in the stocks table
+    const { rows } = await pool.query('SELECT ticker FROM stocks');
+
+    for (const { ticker } of rows) {
+      let timeSeries;
+
+      try {
+        timeSeries = await fetchTimeSeries(ticker);
+      } catch (e) {
+        // Already logged inside fetchTimeSeries
+        continue;
+      }
+
+      if (!timeSeries) {
+        // e.g. rate-limited or error JSON from Alpha Vantage
+        continue;
+      }
+
+      // 2. Sort dates ASC so index 0 is oldest
+      const entriesAsc = Object.entries(timeSeries).sort(
+        (a, b) => new Date(a[0]) - new Date(b[0])
+      );
+
+      // Need at least 91 trading days for "90 days + initial (91st) day"
+      if (entriesAsc.length < 91) {
+        console.warn(
+          `Not enough history for ${ticker}: have ${entriesAsc.length}, need 91`
+        );
+        continue;
+      }
+
+      // Take last 91 trading days (oldest-to-newest)
+      const last91Asc = entriesAsc.slice(-91);
+
+      // Day 0 in this window is the "initial price" day (91 days ago)
+      const [initialDate, initialOhlc] = last91Asc[0];
+      const initialPrice = parseFloat(initialOhlc['4. close']);
+
+      // Remaining 90 days are the historical series (oldest->newest)
+      const last90Asc = last91Asc.slice(1);
+
+      const series = last90Asc.map(([date, ohlc], idx) => ({
+        pos: idx + 1, // 1..90 (1 = 90 days ago, 90 = today)
+        open: parseFloat(ohlc['1. open']),
+        close: parseFloat(ohlc['4. close']),
+      }));
+
+      try {
+        // 3. Update existing row: historical_prices + initial_price
+        await pool.query(
+          `
+          UPDATE stocks
+          SET historical_prices = $2,
+              initial_price      = $3
+          WHERE ticker = $1;
+          `,
+          [ticker, JSON.stringify(series), initialPrice]
+        );
+      } catch (err) {
+        console.error(`DB error for ${ticker}:`, err.stack);
+      }
+    }
+  } catch (err) {
+    console.error('Database query error:', err.stack);
+  }
+}
+
+// Call this periodically / via cron / etc.
+updateHistoricalPrices();
 
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
