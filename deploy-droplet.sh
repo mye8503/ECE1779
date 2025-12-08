@@ -52,16 +52,16 @@ cd /opt
 # Clone repository
 echo "📥 Cloning repository..."
 if [ -d "ECE1779" ]; then
-    echo "Repository already exists, pulling latest changes..."
+    echo "Repository already exists, updating..."
     cd ECE1779
-    git pull
+    git fetch --all
+    git checkout digital_ocean
+    git pull origin digital_ocean
 else
     git clone https://github.com/mye8503/ECE1779.git
     cd ECE1779
+    git checkout digital_ocean
 fi
-
-# Checkout deployment branch
-git checkout digital_ocean
 
 # Verify files exist
 echo "📋 Checking deployment files..."
