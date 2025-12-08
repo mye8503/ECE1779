@@ -29,13 +29,13 @@ const StockChart: React.FC<StockChartProps> = ({
   const [chartData, setChartData] = useState<PriceData[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const API_BASE_URL = window.location.port ? `http://${window.location.hostname}:3000/api` : `http://${window.location.hostname}/api`;
   const [hoverInfo, setHoverInfo] = useState<{
     candle: Candle;
     clientX: number;
     clientY: number;
   } | null>(null);
 
-  const API_BASE_URL = `http://${window.location.hostname}:3000/api`;
 
   useEffect(() => {
     const fetchChartData = async () => {

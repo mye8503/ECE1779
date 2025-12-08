@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/gamescreen.tsx","./src/lobby.tsx","./src/mainmenu.tsx","./src/playerinfo.tsx","./src/playersboard.tsx","./src/progressbar.tsx","./src/resultsscreen.tsx","./src/stockcard.tsx","./src/stockchart.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/hooks/usegamesocket.ts"],"errors":true,"version":"5.9.3"}

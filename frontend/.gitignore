@@ -1,0 +1,11 @@
+# Environment files - these contain secrets
+.env
+.env.local
+.env.production
+
+# Dependencies
+node_modules/
+
+# Build outputs - commented out so we can commit dist for deployment
+# dist/
+# build/

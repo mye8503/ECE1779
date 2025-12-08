@@ -1,12 +1,13 @@
-import React, { Component } from 'react';
+import { Component } from 'react';
 import './App.css';
 import MainMenu from './MainMenu';
 import Lobby from './Lobby';
 import GameScreen from './GameScreen';
 import ResultsScreen from './ResultsScreen';
 
-// API configuration - dynamically detect host
-const API_BASE_URL = `http://${window.location.hostname}:3000/api`;
+// API configuration - use environment variable in production, fallback to localhost for development
+const API_BASE_URL = import.meta.env.VITE_API_URL || (window.location.port ? `http://${window.location.hostname}:3000/api` : `http://${window.location.hostname}/api`);
+const WS_BASE_URL = import.meta.env.VITE_WS_URL || (window.location.port ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:3000` : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}/ws`);
 
 // Type definitions
 interface Stock {
@@ -525,7 +526,7 @@ class App extends Component<{}, AppState> {
             // If impact changed, create a notification
             if (currentImpact !== previousImpact && currentImpact !== 0) {
               // Check if we recorded this transaction
-              const transactionKey = `${priceData.ticker}_${pricesData.current_volley}`;
+              const transactionKey = `${priceData.ticker}_${priceData.current_volley}`;
               const recordedType = this.state.playerTransactions[transactionKey];
 
               // Use recorded type if available, otherwise use API type, fallback to inferring
@@ -634,8 +635,7 @@ class App extends Component<{}, AppState> {
     }
 
     try {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.hostname}:3000/ws?gameId=${this.state.gameId}&token=${this.state.token}`;
+      const wsUrl = `${WS_BASE_URL}/ws?gameId=${this.state.gameId}&token=${this.state.token}`;
 
       console.log('Connecting to WebSocket:', wsUrl);
       const ws = new WebSocket(wsUrl);

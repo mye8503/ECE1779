@@ -1,0 +1,196 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secret
+type: Opaque
+stringData:
+  POSTGRES_DB: stock_game
+  POSTGRES_USER: game_user
+  POSTGRES_PASSWORD: game_password
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-initdb
+data:
+  init.sql: |
+    -- Stock Trading Game Database Schema
+
+    CREATE TABLE IF NOT EXISTS users (
+        user_id SERIAL PRIMARY KEY,
+        username VARCHAR(50) UNIQUE NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        balance DECIMAL(10,2) DEFAULT 1000.00,
+        games_played INTEGER DEFAULT 0,
+        games_won INTEGER DEFAULT 0,
+        total_profit DECIMAL(10,2) DEFAULT 0.00,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+
+    CREATE TABLE IF NOT EXISTS guests (
+        guest_id SERIAL PRIMARY KEY,
+        session_token VARCHAR(255) UNIQUE NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP NOT NULL
+    );
+
+
+    CREATE TYPE game_status AS ENUM ('waiting', 'active', 'completed');
+    CREATE TABLE IF NOT EXISTS games (
+        game_id SERIAL PRIMARY KEY,
+        status game_status NOT NULL DEFAULT 'waiting',
+        current_volley INTEGER DEFAULT 0,
+        max_volleys INTEGER DEFAULT 300,
+        start_time TIMESTAMP,
+        end_time TIMESTAMP,
+        winner_user_id INTEGER REFERENCES users(user_id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+
+    CREATE TABLE IF NOT EXISTS stocks (
+        stock_id SERIAL PRIMARY KEY,
+        ticker VARCHAR(10) UNIQUE NOT NULL,
+        company_name VARCHAR(255) NOT NULL,
+        initial_price DECIMAL(10,2) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+
+    CREATE TABLE IF NOT EXISTS gamestockprices (
+        id SERIAL PRIMARY KEY,
+        game_id INTEGER NOT NULL REFERENCES games(game_id) ON DELETE CASCADE,
+        stock_id INTEGER NOT NULL REFERENCES stocks(stock_id) ON DELETE CASCADE,
+        volley INTEGER NOT NULL,
+        price DECIMAL(10,2) NOT NULL,
+        historical_delta DECIMAL(10,2) DEFAULT 0.00,
+        player_impact DECIMAL(10,2) DEFAULT 0.00,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(game_id, stock_id, volley)
+    );
+
+    CREATE TABLE IF NOT EXISTS gameparticipants (
+        participant_id SERIAL PRIMARY KEY,
+        game_id INTEGER NOT NULL REFERENCES games(game_id) ON DELETE CASCADE,
+        user_id INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+        guest_id INTEGER REFERENCES guests(guest_id) ON DELETE SET NULL,
+        is_ai BOOLEAN DEFAULT FALSE,
+        starting_balance DECIMAL(10,2) DEFAULT 1000.00,
+        final_portfolio_value DECIMAL(10,2),
+        rank INTEGER,
+        joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        CHECK (
+            (user_id IS NOT NULL AND guest_id IS NULL AND is_ai = FALSE) OR
+            (user_id IS NULL AND guest_id IS NOT NULL AND is_ai = FALSE) OR
+            (user_id IS NULL AND guest_id IS NULL AND is_ai = TRUE)
+        )
+    );
+
+    CREATE TYPE transaction_type AS ENUM ('buy', 'sell');
+    CREATE TABLE IF NOT EXISTS transactions (
+        transaction_id SERIAL PRIMARY KEY,
+        game_id INTEGER NOT NULL REFERENCES games(game_id) ON DELETE CASCADE,
+        participant_id INTEGER NOT NULL REFERENCES gameparticipants(participant_id) ON DELETE CASCADE,
+        stock_id INTEGER NOT NULL REFERENCES stocks(stock_id) ON DELETE CASCADE,
+        volley INTEGER NOT NULL,
+        transaction_type transaction_type NOT NULL,
+        quantity INTEGER NOT NULL CHECK (quantity > 0),
+        price_per_share DECIMAL(10,2) NOT NULL CHECK (price_per_share > 0),
+        total_value DECIMAL(10,2) NOT NULL CHECK (total_value > 0),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_games_status ON games(status);
+    CREATE INDEX IF NOT EXISTS idx_gamestockprices_game_volley ON gamestockprices(game_id, volley);
+    CREATE INDEX IF NOT EXISTS idx_transactions_game_volley ON transactions(game_id, volley);
+    CREATE INDEX IF NOT EXISTS idx_gameparticipants_game ON gameparticipants(game_id);
+
+    INSERT INTO stocks (ticker, company_name, initial_price) VALUES
+    ('AAPL', 'Apple Inc.', 175.00),
+    ('GOOGL', 'Alphabet Inc.', 140.00),
+    ('MSFT', 'Microsoft Corporation', 380.00),
+    ('TSLA', 'Tesla, Inc.', 250.00),
+    ('AMZN', 'Amazon.com, Inc.', 145.00),
+    ('NVDA', 'NVIDIA Corporation', 480.00),
+    ('META', 'Meta Platforms, Inc.', 350.00),
+    ('NFLX', 'Netflix, Inc.', 450.00)
+    ON CONFLICT (ticker) DO NOTHING;
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:16
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_DB
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_PASSWORD
+        volumeMounts:
+        - name: init-script
+          mountPath: /docker-entrypoint-initdb.d/init.sql
+          subPath: init.sql
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+      volumes:
+      - name: init-script
+        configMap:
+          name: postgres-initdb
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+  type: ClusterIP

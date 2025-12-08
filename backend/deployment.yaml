@@ -1,32 +1,47 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: task-manager-deployment
+  name: backend-deployment
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: task-manager
+      app: backend
   template:
     metadata:
       labels:
-        app: task-manager
+        app: backend
     spec:
       containers:
-        - name: task-manager
-          image: task-manager-k8s
+        - name: backend
+          image: myregistry/backend:latest
           imagePullPolicy: Never
           ports:
             - containerPort: 3000
           env:
-            - name: API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: api-secret
-                  key: API_KEY
+            - name: DB_HOST
+              value: "postgres"
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_USER
+              value: "game_user"
+            - name: DB_PASSWORD
+              value: "game_password"
+            - name: DB_NAME
+              value: "stock_game"
+            - name: REDIS_URL
+              value: "redis://redis:6379"
+            - name: PORT
+              value: "3000"
           readinessProbe:
             httpGet:
-              path: /health
+              path: /api/health
               port: 3000
-            initialDelaySeconds: 5
+            initialDelaySeconds: 10
             periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 20
