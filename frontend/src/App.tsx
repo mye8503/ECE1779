@@ -6,8 +6,8 @@ import GameScreen from './GameScreen';
 import ResultsScreen from './ResultsScreen';
 
 // API configuration - use environment variable in production, fallback to localhost for development
-const API_BASE_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3000/api`;
-const WS_BASE_URL = import.meta.env.VITE_WS_URL || `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:3000`;
+const API_BASE_URL = import.meta.env.VITE_API_URL || (window.location.port ? `http://${window.location.hostname}:3000/api` : `http://${window.location.hostname}/api`);
+const WS_BASE_URL = import.meta.env.VITE_WS_URL || (window.location.port ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:3000` : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}/ws`);
 
 // Type definitions
 interface Stock {
