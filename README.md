@@ -157,7 +157,6 @@ We utilize DigitalOcean’s built-in monitoring dashboard to track CPU utilizati
 
 
 ## 5 User Guide
-How does a user interact with your application? Provide clear instructions for using each main feature, supported with screenshots where appropriate.
 
 1. At the deployment link (http://209.38.10.60/), you will first see our home page. You can either Register a new account with a username and password, Login with an existing account, or play as a Guest. After registering an account, you will need to then login.
 2. Selecting any of these options will take you to the games menu, where you can either logout (takes you back to the home page) or browse games.
@@ -167,7 +166,6 @@ How does a user interact with your application? Provide clear instructions for u
 6. You can view the status of backend API calls as well as WebSocket updates in the console.
 
 ## 6 Development Guide
-What are the steps to set up the development environment? Include detailed instructions for environment, database, storage, and local testing.
 
 ### Local Testing
 1. To run on Kubernetes locally, make sure minikube is running and then run the shell script ```minikube_setup.sh```.
