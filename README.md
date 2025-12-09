@@ -35,7 +35,6 @@ Initially, stock data will be randomly generated to focus on core gameplay and s
 - Node.js (Express) — Core API responsible for all game logic, session management, and communication between services.
 - WebSockets (ws) — Provides live 2s interval updates for stock price movements, and handles concurrent user interactions.
 - PostgreSQL — Primary relational database storing persistent game state: users, sessions, trades, and historical prices.
-- Redis — In-memory cache for fast access to volatile game data, active sessions, and short-lived state.
 
 ### Frontend
 - React + TypeScript — Single-page user interface for joining games, making trades, and viewing live charts.
@@ -49,7 +48,6 @@ Initially, stock data will be randomly generated to focus on core gameplay and s
     - frontend
     - backend
     - postgres with persistent volume
-    - redis for caching
 
 ### Orchestration — Kubernetes
 
