@@ -24,7 +24,7 @@ The objective of this project is to develop a browser-based multiplayer game whe
 
 During gameplay, users can buy and sell stocks from a curated list of companies. Stock prices update every two seconds, reflecting simulated or real-world market movements. At the end of the session, the player with the highest portfolio value is declared the winner. Each stock is represented by its name, ticker, and a live candlestick chart of price versus time.
 
-Initially, stock data will be randomly generated to focus on core gameplay and synchronization mechanics. Once the MVP is stable, we will integrate historical or live stock data from APIs such as Yahoo Finance or CCXT to enhance realism. Players can join games either as guests or through registered accounts. Logged-in users will have their stats, scores, and leaderboard rankings saved persistently.
+Initially, stock data was randomly generated to focus on core gameplay and synchronization mechanics. Once the MVP was stable, we  integrated live stock data from the Alpha Vantage API to enhance realism. Players can join games either as guests or through registered accounts. Logged-in users will have their stats, scores, and leaderboard rankings saved persistently.
 
 ---
 
@@ -181,7 +181,7 @@ What are the steps to set up the development environment? Include detailed instr
 
 ## 7 Deployment Information
 
-Our application can be accessed online at http://209.38.10.60/.
+Our application can be accessed online at http://209.38.10.60/. The code run to deploy to DigitalOcean can be found on the digital_ocean branch (see KUBERNETES_DEPLOYMENT.md).
 
 ## 8 Individual Contributions
 
@@ -200,15 +200,15 @@ All members contributed equally to game logic, feature testing, and non-code del
 ## 9 Lessons Learned and Concluding Remarks
 
 #### Websocket
-This project was a great learning experience for understanding how websocket works and how it is integrated into the frontend. By going through examples on GitHub and referencing documentation, we were able to build up each component to work well with the typical endpoint-based backend logic. From the upgrade requests, authentication, to sending and listening to updates, the trial and error methods we took to build this application really helped to construct a working understanding about the technology. We also realized that our application was compact enough that it would function with normal HTTP requests to provide live stock updates, but if we were to decrease the time between each volley, or to increase the amount of players in a game, then the advantages of websockets will be better demonstrated.
+This project was a great learning experience for understanding how WebSocket works and how it is integrated into the frontend. By going through examples on GitHub and referencing documentation, we were able to build up each component to work well with the typical endpoint-based backend logic. From the upgrade requests, authentication, to sending and listening to updates, the trial and error methods we took to build this application really helped to construct a working understanding about the technology. We also realized that our application was compact enough that it would function with normal HTTP requests to provide live stock updates, but if we were to decrease the time between each volley, or to increase the amount of players in a game, then the advantages of WebSockets will be better demonstrated.
 
 #### Frontend Development
 Although not the focus of this project, designing frontend elements and watching the complex backend logic being efficiently presented on a graphical interface is a very rewarding experience. We experimented with different packages for graphing the stock movements, and settled on a simple candlestick graph in the end. Working on the frontend felt like a productive break from the project.
 
 #### Planning and Project organization
-We greatly appreciated the efforts taken to describe the api calls and database schemas in detail before starting to code. It made the project experience very streamlined and allowed us to focus on brainstorming for new features such as websockets and the frontend design. We also noted the importance to maintain a good structure for our code base, as it was tedious to debug errors in a long file as opposed to going through a clearly designed architecture. The websocket logic in particular was easy to debug as each component was handled by a separate file, effectively isolating dependencies on local and global variables. Having proper branching in GitHub and clear commit messages also helped up stay on top of the order of the project and allowed for effective concurrent work.
+We greatly appreciated the efforts taken to describe the api calls and database schemas in detail before starting to code. It made the project experience very streamlined and allowed us to focus on brainstorming for new features such as WebSockets and the frontend design. We also noted the importance to maintain a good structure for our code base, as it was tedious to debug errors in a long file as opposed to going through a clearly designed architecture. The WebSocket logic in particular was easy to debug as each component was handled by a separate file, effectively isolating dependencies on local and global variables. Having proper branching in GitHub and clear commit messages also helped up stay on top of the order of the project and allowed for effective concurrent work.
 
-Overall, this project was a great learning experience for the entire team. We were able to learn through planning and experimentation. Some parts felt harder to implement than others. The websocket logic felt much harder to implement as opposed to the api data calls to extract historical stock data, albeit both are considered **advanced features**. This is a well-designed course project that ties closely with modern technologies used in industries.
+Overall, this project was a great learning experience for the entire team. We were able to learn through planning and experimentation. Some parts felt harder to implement than others. The WebSocket logic felt much harder to implement as opposed to the api data calls to extract historical stock data, albeit both are considered **advanced features**. This is a well-designed course project that ties closely with modern technologies used in industries.
 
 
 ## 10 Video Demo (please click on the gif to watch the demo)
