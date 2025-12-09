@@ -1,9 +1,9 @@
 # Final Report
 
 ## 0. Team Information
-Peishuo Cai 1006865634 peishuo.cai@mail.utoronto.ca
-Tom Nguyen 1006707761 tomasdfgh.nguyen@mail.utoronto.ca
-Maggie Ye 1006830351 maggie.ye@mail.utoronto.ca
+- Peishuo Cai 1006865634 peishuo.cai@mail.utoronto.ca
+- Tom Nguyen 1006707761 tomasdfgh.nguyen@mail.utoronto.ca
+- Maggie Ye 1006830351 maggie.ye@mail.utoronto.ca
 
 
 ## 1. Motivation
