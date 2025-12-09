@@ -211,7 +211,7 @@ We greatly appreciated the efforts taken to describe the api calls and database 
 Overall, this project was a great learning experience for the entire team. We were able to learn through planning and experimentation. Some parts felt harder to implement than others. The websocket logic felt much harder to implement as opposed to the api data calls to extract historical stock data, albeit both are considered **advanced features**. This is a well-designed course project that ties closely with modern technologies used in industries.
 
 
-## 10 Video Demo
+## 10 Video Demo (please click on the gif to watch the demo)
 
 [![DEMO GIF](./readme_resources/stonks-up-stongs.gif)](https://www.youtube.com/watch?v=s6Vg-YWhgng)
    
