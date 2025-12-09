@@ -153,7 +153,7 @@ We utilize DigitalOcean’s built-in monitoring dashboard to track CPU utilizati
 2. User Authentication and Authorization:  
    Implemented using secure login and token-based sessions. Users can only access and modify their own data and gameplay records. WebSockets will operate over HTTPS (WSS) for encrypted communication, and sensitive credentials will be stored in a secrets file.
 3. Integration with Real Market Data:  
-   During games, stock data is fetched live from the https://www.alphavantage.co/ stock market data API to simulate realistic price movements and trading volatility.
+   At initialization, recent 90-day historical stock data is fetched live from the https://www.alphavantage.co/ stock market data API to simulate realistic price movements and trading volatility, and used as a baseline for price calculation.
 
 
 ## 5 User Guide
@@ -213,6 +213,7 @@ Overall, this project was a great learning experience for the entire team. We we
 
 ## 10 Video Demo
 
+[![DEMO GIF](./readme_resources/stonks-up-stongs.gif)](https://www.youtube.com/watch?v=s6Vg-YWhgng)
    
   
 
